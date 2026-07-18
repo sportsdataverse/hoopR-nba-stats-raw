@@ -37,3 +37,7 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Atomic-write leftovers from the sdv-py raw JSON store (tmp + rename);
+# a torn run may strand these — they are never valid payloads.
+*.json.tmp
