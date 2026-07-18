@@ -53,8 +53,10 @@ def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__, file=sys.stderr)
         return 2
-    os.environ.setdefault("SDV_PY_NBA_RAW_JSON_DIR", str(REPO / "nba_stats" / "json"))
-    os.environ.pop("SDV_PY_NBA_RAW_JSON_READONLY", None)  # this script IS the writer
+    # Explicit store args (not env) so this writer is immune to ambient
+    # config: raw_store_dir pins the tree to THIS checkout and
+    # raw_store_readonly=False overrides any leaked READONLY env var.
+    store = os.environ.get("SDV_PY_NBA_RAW_JSON_DIR") or str(REPO / "nba_stats" / "json")
     from proxy import RoundRobin, load_proxies
     from sportsdataverse.nba.nba_possessions import (
         _fetch_box,
@@ -72,16 +74,16 @@ def main(argv: list[str]) -> int:
     seasons = _parse_seasons(argv[0])
     rr = RoundRobin(load_proxies())
     _log(f"sweeping {len(seasons)} seasons x {len(SEASON_TYPES)} types, workers={WORKERS}")
-    _log(f"store: {os.environ['SDV_PY_NBA_RAW_JSON_DIR']}")
+    _log(f"store: {store}")
 
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
         for ep, fetcher in endpoints:
-            path = _raw_store_path(ep, gid)
+            path = _raw_store_path(ep, gid, root=store)
             if path is not None and path.exists():
                 continue
             try:
-                fetcher(gid, proxy_url=rr.next())
+                fetcher(gid, proxy_url=rr.next(), raw_store_dir=store, raw_store_readonly=False)
                 fetched += 1
             except Exception:  # noqa: BLE001 - a game-local failure must not kill the sweep
                 failed += 1
@@ -98,7 +100,7 @@ def main(argv: list[str]) -> int:
         todo = [
             g
             for g in sorted(gids)
-            if any(not _raw_store_path(ep, g).exists() for ep, _ in endpoints)  # type: ignore[union-attr]
+            if any(not _raw_store_path(ep, g, root=store).exists() for ep, _ in endpoints)  # type: ignore[union-attr]
         ]
         _log(f"season {season}: {len(gids)} games indexed, {len(todo)} incomplete")
         if not todo:
