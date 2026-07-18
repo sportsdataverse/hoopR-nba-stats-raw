@@ -1,0 +1,1 @@
+{"meta": {"version": 1, "request": "http://nba.cloud/games/0049500005/playbyplay?Format=json", "time": "2026-07-18T10:05:01.51Z"}, "game": {"gameId": "0049500005", "videoAvailable": 0, "actions": []}}
