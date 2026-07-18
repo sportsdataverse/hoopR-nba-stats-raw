@@ -15,10 +15,9 @@
 #
 # The commit subject format "NBA Stats Update (Start: YYYY End: YYYY)" is
 # load-bearing (verbatim per this repo's contributor docs): downstream
-# tooling parses the years out of it. Year semantics are the NBA stats
-# pipeline's END-year convention (1995-96 season => 1996), while the disk
-# dirs are START year (decoded from game ids by the sdv-py raw store) —
-# hence the +1 shift below.
+# tooling parses the years out of it. Disk dirs AND labels both use the NBA
+# stats pipeline's END-year convention (1995-96 season => 1996), so the
+# label is the directory name verbatim.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,11 +32,7 @@ for season in $seasons; do
     continue
   fi
   n=$(git diff --cached --name-only | wc -l)
-  case "$season" in
-    *[!0-9]*) label="$season" ;;                 # e.g. "unknown" bucket — no shift
-    *) label=$((season + 1)) ;;                  # dir start year -> season end year
-  esac
-  git commit -m "NBA Stats Update (Start: $label End: $label)"
+  git commit -m "NBA Stats Update (Start: $season End: $season)"
   git push origin main
-  echo "[$(date -u '+%F %TZ')] pushed season dir $season as $label ($n files)"
+  echo "[$(date -u '+%F %TZ')] pushed season $season ($n files)"
 done

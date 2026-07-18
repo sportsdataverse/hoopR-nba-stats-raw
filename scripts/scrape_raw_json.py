@@ -9,7 +9,8 @@ Game discovery comes from the stats.nba.com season game index; per-game
 payloads go through sdv-py's store-routed fetchers (``playbyplayv3``,
 ``boxscoretraditionalv3``, ``gamerotation``) in read-write mode, so every
 fetch persists ``nba_stats/json/{endpoint}/{season}/{game_id}.json`` (atomic
-tmp+rename, season = start year decoded from the game id). Idempotent and
+tmp+rename, season = END year per the pipeline convention, decoded from the
+game id by the sdv-py store: 1995-96 => 1996). Idempotent and
 resumable: on-disk payloads are skipped without a parse; Ctrl-C and rerun.
 ``gamerotation`` misses are tolerated — the endpoint has no data for old
 seasons. Fetch-only and I/O-bound: threads, not processes, and the worker
@@ -56,7 +57,9 @@ def main(argv: list[str]) -> int:
     # Explicit store args (not env) so this writer is immune to ambient
     # config: raw_store_dir pins the tree to THIS checkout and
     # raw_store_readonly=False overrides any leaked READONLY env var.
-    store = os.environ.get("SDV_PY_NBA_RAW_JSON_DIR") or str(REPO / "nba_stats" / "json")
+    store = os.environ.get("SDV_PY_NBA_RAW_JSON_DIR") or str(
+        REPO / "nba_stats" / "json"
+    )
     from proxy import RoundRobin, load_proxies
     from sportsdataverse.nba.nba_possessions import (
         _fetch_box,
@@ -73,7 +76,9 @@ def main(argv: list[str]) -> int:
     )
     seasons = _parse_seasons(argv[0])
     rr = RoundRobin(load_proxies())
-    _log(f"sweeping {len(seasons)} seasons x {len(SEASON_TYPES)} types, workers={WORKERS}")
+    _log(
+        f"sweeping {len(seasons)} seasons x {len(SEASON_TYPES)} types, workers={WORKERS}"
+    )
     _log(f"store: {store}")
 
     def _one(gid: str) -> tuple[int, int]:
@@ -83,7 +88,12 @@ def main(argv: list[str]) -> int:
             if path is not None and path.exists():
                 continue
             try:
-                fetcher(gid, proxy_url=rr.next(), raw_store_dir=store, raw_store_readonly=False)
+                fetcher(
+                    gid,
+                    proxy_url=rr.next(),
+                    raw_store_dir=store,
+                    raw_store_readonly=False,
+                )
                 fetched += 1
             except Exception:  # noqa: BLE001 - a game-local failure must not kill the sweep
                 failed += 1
@@ -100,7 +110,9 @@ def main(argv: list[str]) -> int:
         todo = [
             g
             for g in sorted(gids)
-            if any(not _raw_store_path(ep, g, root=store).exists() for ep, _ in endpoints)  # type: ignore[union-attr]
+            if any(
+                not _raw_store_path(ep, g, root=store).exists() for ep, _ in endpoints
+            )  # type: ignore[union-attr]
         ]
         _log(f"season {season}: {len(gids)} games indexed, {len(todo)} incomplete")
         if not todo:
@@ -113,7 +125,9 @@ def main(argv: list[str]) -> int:
                 failed += x
         grand_fetched += fetched
         grand_failed += failed
-        _log(f"season {season}: done | {fetched} payloads fetched | {failed} endpoint misses")
+        _log(
+            f"season {season}: done | {fetched} payloads fetched | {failed} endpoint misses"
+        )
     _log(
         f"sweep complete: {grand_fetched} payloads persisted, {grand_failed} endpoint misses (rotation gaps expected pre-~2015)"
     )

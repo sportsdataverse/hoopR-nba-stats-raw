@@ -44,3 +44,7 @@ vignettes/*.pdf
 
 # Local sweep logs (scripts/scrape_raw_json.py runs)
 logs/
+
+# Tooling byproducts
+__pycache__/
+.omc/
