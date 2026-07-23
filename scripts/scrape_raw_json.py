@@ -66,19 +66,36 @@ REPO = Path(__file__).resolve().parent.parent
 SEASON_TYPES = ("Regular Season", "Playoffs")
 WORKERS = int(os.environ.get("SCRAPE_WORKERS", "6"))
 PERIOD_ENDPOINT = "boxscoretraditionalv3_period"
-# Endpoints that only have data from the tracking era and 500 on older seasons —
-# skip them below their floor (start-year) so we stop wasting a 500 per call.
-# gamerotation is game-keyed (2016); the rest are season-level analytics (2014).
-# NOTE: leaguedashteamstats is deliberately NOT here — its Base variant is the
-# team-id source for commonteamroster, so skipping it would break old rosters.
-_TRACK = int(os.environ.get("TRACKING_MIN_SEASON", "2014"))
+# Per-endpoint season floor (start-year): below it the endpoint has no data and
+# either 500s or returns an empty envelope, so we skip the wasted call. Floors are
+# measured (store scan + live probe), not guessed. Game-keyed endpoints are dropped
+# in _endpoints_for; season-level ones via capture_season(skip_endpoints=...).
+#
+# NOT skipped (verified they DO carry old-season data): leaguedashteamshotlocations
+# / leaguedashplayershotlocations (basic shot-zone variants populate back to 1996);
+# leaguedashteamstats (its Base variant is the team-id source for commonteamroster).
+_PT = int(os.environ.get("PT_MIN_SEASON", "2013"))  # SportVU player tracking: 2013-14+
 ENDPOINT_MIN_SEASON = {
+    # --- game-keyed (probed floors) ---
     "gamerotation": int(os.environ.get("GAMEROTATION_MIN_SEASON", "2016")),
-    "playercompare": _TRACK,
-    "playergamelogs": _TRACK,
-    "teamgamelogs": _TRACK,
-    "leaguedashteamshotlocations": _TRACK,
-    "leaguedashptteamdefend": _TRACK,
+    "boxscorematchupsv3": 2017,  # probed: empty <=2016, populates 2017-18
+    "boxscoredefensivev2": 2017,  # probed: empty <=2016, populates 2017-18
+    # --- season-level: player-tracking (SportVU) ---
+    "leaguedashptstats": _PT,
+    "leaguedashptdefend": _PT,
+    "leaguedashplayerptshot": _PT,
+    "leaguedashoppptshot": _PT,
+    "leaguedashteamptshot": _PT,
+    "leaguedashptteamdefend": _PT,
+    # --- season-level: matchup data (2017-18+, same era as boxscorematchups) ---
+    "matchupsrollup": 2017,
+    "leagueseasonmatchups": 2017,
+    # --- season-level: Synergy play-types (2015-16+) ---
+    "synergyplaytypes": 2015,
+    # --- season-level: game-log v-endpoints (tracking-era, empty pre-2014) ---
+    "playercompare": 2014,
+    "playergamelogs": 2014,
+    "teamgamelogs": 2014,
 }
 
 
