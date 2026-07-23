@@ -47,7 +47,12 @@ def classify(status: Optional[int], text: str, error: Optional[str]) -> str:
 
 
 _QUARANTINE_CATS = ("transport_err", "blocked", "blank")
-_ERROR_CATS = ("transport_err", "blocked", "blank", "server_err")  # non-benign, worth logging
+_ERROR_CATS = (
+    "transport_err",
+    "blocked",
+    "blank",
+    "server_err",
+)  # non-benign, worth logging
 
 
 class ProxyHealth:
@@ -95,6 +100,9 @@ class ProxyHealth:
         endpoint: str = "?",
         resource: str = "",
         status: Optional[int] = None,
+        params: Optional[dict[str, Any]] = None,
+        session_id: Optional[int] = None,
+        session_req: Optional[int] = None,
     ) -> None:
         key = redact(proxy_url) if proxy_url else "direct"
         with self._lock:
@@ -121,26 +129,34 @@ class ProxyHealth:
             d["lat_ms"] = latency_ms
             if category in _QUARANTINE_CATS:
                 d["consec_err"] += 1
-                if d["consec_err"] >= self.quarantine_fails:  # (re-)bench for a cooldown
+                if (
+                    d["consec_err"] >= self.quarantine_fails
+                ):  # (re-)bench for a cooldown
                     d["quar_until"] = time.monotonic() + self.quarantine_secs
             else:  # ok / notfound / server_err: the proxy delivered, so rehabilitate it
                 d["consec_err"] = 0
                 d["quar_until"] = 0.0
             if self._elog is not None and category in _ERROR_CATS:
-                self._elog.write(
-                    json.dumps(
-                        {
-                            "ts": round(time.time(), 3),
-                            "endpoint": endpoint,
-                            "resource": resource,
-                            "status": status,
-                            "cat": category,
-                            "lat_ms": round(latency_ms, 1),
-                            "proxy": key,
-                        }
-                    )
-                    + "\n"
-                )
+                entry = {
+                    "ts": round(time.time(), 3),
+                    "endpoint": endpoint,
+                    "resource": resource,
+                    "status": status,
+                    "cat": category,
+                    "lat_ms": round(latency_ms, 1),
+                    "proxy": key,
+                }
+                # Full request params make same-endpoint/different-variant errors
+                # individually distinguishable (e.g. leaguedashteamshotlocations's
+                # 28 param variants). session_id + session_req pinpoint WHICH
+                # session and WHICH request-in-the-sequence failed (throttle-after-N).
+                if params:
+                    entry["params"] = params
+                if session_id is not None:
+                    entry["session_id"] = session_id
+                if session_req is not None:
+                    entry["session_req"] = session_req
+                self._elog.write(json.dumps(entry) + "\n")
                 self._elog.flush()
 
     def is_quarantined(self, proxy_url: Optional[str]) -> bool:
@@ -279,7 +295,9 @@ class RoundRobin:
             ``password``), e.g. from :func:`load_proxies`.
     """
 
-    def __init__(self, proxies: list[dict[str, Any]], health: "Optional[ProxyHealth]" = None):
+    def __init__(
+        self, proxies: list[dict[str, Any]], health: "Optional[ProxyHealth]" = None
+    ):
         self._proxies = list(proxies)
         self._order = list(range(len(self._proxies)))
         random.shuffle(self._order)

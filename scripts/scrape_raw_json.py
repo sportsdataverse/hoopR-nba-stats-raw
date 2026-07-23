@@ -204,20 +204,10 @@ def main(argv: list[str]) -> int:
         periods_in_game,
         season_of,
     )
-    from proxy import ProxyHealth, RoundRobin, classify, load_proxies
+    from proxy import ProxyHealth, RoundRobin, load_proxies
     from season_capture import capture_season, game_ids_from_gamelog, payload_path
+    from session_transport import SessionTransport
     from sportsdataverse.nba.nba_possessions import _raw_store_path, _through_raw_store
-
-    # The real curl_cffi transport lives in the shared stats runtime; wrap it so
-    # every fetch's (proxy, status, latency, error) feeds ProxyHealth. League-
-    # agnostic: prefer the league's runtime module, fall back to the NBA one.
-    try:
-        _rt = importlib.import_module(
-            f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}_runtime"
-        )
-        _curl_transport = _rt._curl_transport
-    except (ImportError, AttributeError):
-        pass
 
     stats = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}")
     game_endpoints, _season_endpoints = discover(stats, STATS_PREFIX)
@@ -249,54 +239,19 @@ def main(argv: list[str]) -> int:
         error_log=os.environ.get("STATS_ERROR_LOG", "logs/errors.jsonl"),
     )
     rr = RoundRobin(pool, health=health)
-
-    def _instrumented(url: str, params: dict, headers: dict, proxy_url) -> tuple:
-        """Wrap the real curl_cffi transport to record per-fetch health (keyed by
-        endpoint + resource so errors aggregate by request), then return
-        ``(status, text)`` unchanged so the store/parse path is identical."""
-        endpoint = (
-            url.rsplit("/stats/", 1)[-1].split("?")[0] if "/stats/" in url else url
-        )
-        resource = str(
-            (params or {}).get("GameID") or (params or {}).get("Season") or ""
-        )
-        t0 = time.monotonic()
-        try:
-            status, text = _curl_transport(url, params, headers, proxy_url)
-        except Exception:
-            health.record(
-                proxy_url,
-                "transport_err",
-                (time.monotonic() - t0) * 1000,
-                endpoint=endpoint,
-                resource=resource,
-                status=None,
-            )
-            raise  # preserve the "timeout propagates" contract for the miss count
-        health.record(
-            proxy_url,
-            classify(status, text, None),
-            (time.monotonic() - t0) * 1000,
-            endpoint=endpoint,
-            resource=resource,
-            status=status,
-        )
-        return status, text
+    # Sticky per-worker curl_cffi session: one JA3 handshake reused across a burst,
+    # rotating the proxy after N requests / T seconds / on a fault. It owns proxy
+    # selection (draws from rr) and health recording, so the fetch closures pass no
+    # proxy_url — the session picks its own and records endpoint+params+session id/req.
+    session_transport = SessionTransport(rr, health)
 
     def _season_fetch(endpoint: str, kwargs: dict) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(
-            return_parsed=False, proxy_url=rr.next(), transport=_instrumented, **kwargs
-        )
+        return fn(return_parsed=False, transport=session_transport, **kwargs)
 
     def _game_fetch(endpoint: str, gid: str) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(
-            game_id=gid,
-            return_parsed=False,
-            proxy_url=rr.next(),
-            transport=_instrumented,
-        )
+        return fn(game_id=gid, return_parsed=False, transport=session_transport)
 
     def _endpoints_for(gid: str) -> list:
         """Per-game endpoint list, dropping any endpoint below its tracking-era
@@ -363,8 +318,7 @@ def main(argv: list[str]) -> int:
                         start_range=start_range,
                         end_range=end_range,
                         return_parsed=False,
-                        proxy_url=rr.next(),
-                        transport=_instrumented,
+                        transport=session_transport,
                     )
                 return out
 
