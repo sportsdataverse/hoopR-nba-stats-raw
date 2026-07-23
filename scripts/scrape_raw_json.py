@@ -66,6 +66,9 @@ REPO = Path(__file__).resolve().parent.parent
 SEASON_TYPES = ("Regular Season", "Playoffs")
 WORKERS = int(os.environ.get("SCRAPE_WORKERS", "6"))
 PERIOD_ENDPOINT = "boxscoretraditionalv3_period"
+# gamerotation has no data before the tracking era and 500s on older games (one
+# wasted request per old game). Skip it below this season (start-year). Env-tunable.
+GAMEROTATION_MIN_SEASON = int(os.environ.get("GAMEROTATION_MIN_SEASON", "2016"))
 
 
 def _log(msg: str) -> None:
@@ -121,7 +124,7 @@ def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: floa
         _log(
             f"season {season}: {done}/{total} games | {rate:.1f}/s | ETA {eta_s} | "
             f"win[ok={delta['ok']} blank={delta['blank']} 404={delta['notfound']} "
-            f"blocked={delta['blocked']} timeout/err={delta['transport_err']}] | "
+            f"blocked={delta['blocked']} 5xx={delta['server_err']} timeout/err={delta['transport_err']}] | "
             f"proxies {snap['healthy']}ok/{snap['degraded']}deg/{snap['quar']}quar of {pool_size} | "
             f"top-err: {health.top_error_endpoints(3)}"
         )
@@ -255,10 +258,17 @@ def main(argv: list[str]) -> int:
             transport=_instrumented,
         )
 
+    def _endpoints_for(gid: str) -> list:
+        """Per-game endpoint list, dropping gamerotation for pre-tracking seasons
+        where it only 500s (no data)."""
+        if season_of(gid) < GAMEROTATION_MIN_SEASON:
+            return [e for e in game_endpoints if e != "gamerotation"]
+        return game_endpoints
+
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
         pbp_payload = None
-        for ep in game_endpoints:
+        for ep in _endpoints_for(gid):
             path = _raw_store_path(ep, gid, root=store)
             if path is not None and path.exists():
                 if ep == "playbyplayv3":
@@ -369,7 +379,7 @@ def main(argv: list[str]) -> int:
         # were never captured. Without the second half, games captured before an
         # endpoint was added would be skipped forever and a backfill would no-op.
         def _incomplete(g: str) -> bool:
-            for ep in game_endpoints:
+            for ep in _endpoints_for(g):  # gamerotation is not "missing" for pre-2016 games
                 p = _raw_store_path(ep, g, root=store)
                 if p is not None and not p.exists():
                     return True
@@ -395,7 +405,7 @@ def main(argv: list[str]) -> int:
         _log(
             f"season {season}: done | {fetched} payloads fetched | {failed} misses"
             f" | http[ok={c['ok']} blank={c['blank']} 404={c['notfound']}"
-            f" blocked={c['blocked']} timeout/err={c['transport_err']}]"
+            f" blocked={c['blocked']} 5xx={c['server_err']} timeout/err={c['transport_err']}]"
             f" | proxies {snap['quar']} quarantined of {len(pool)}"
         )
         breakdown = health.endpoint_summary()
@@ -403,7 +413,8 @@ def main(argv: list[str]) -> int:
             _log(
                 "  errors by endpoint (cumulative): "
                 + " | ".join(
-                    f"{ep}[t={ec.get('transport_err', 0)} b={ec.get('blocked', 0)} z={ec.get('blank', 0)}]"
+                    f"{ep}[t={ec.get('transport_err', 0)} b={ec.get('blocked', 0)}"
+                    f" 5xx={ec.get('server_err', 0)} z={ec.get('blank', 0)}]"
                     for ep, _e, ec in breakdown[:8]
                 )
             )
@@ -414,7 +425,8 @@ def main(argv: list[str]) -> int:
     for ep, errs, ec in health.endpoint_summary():
         _log(
             f"endpoint {ep}: {errs} faults | ok={ec['ok']} 404={ec['notfound']}"
-            f" blocked={ec['blocked']} blank={ec['blank']} timeout/err={ec['transport_err']}"
+            f" blocked={ec['blocked']} 5xx={ec['server_err']} blank={ec['blank']}"
+            f" timeout/err={ec['transport_err']}"
         )
     health.close()
     _log(

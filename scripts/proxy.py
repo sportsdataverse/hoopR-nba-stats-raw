@@ -22,14 +22,18 @@ def classify(status: Optional[int], text: str, error: Optional[str]) -> str:
     """Bucket a fetch outcome for health/observability.
 
     - ``transport_err``: the request raised (timeout / connection / proxy dead).
-    - ``blocked``: HTTP 403 / 429 / 5xx — the site pushed back (throttle / IP block).
+    - ``blocked``: HTTP 403 / 429 — the IP was rate-limited / blocked.
+    - ``server_err``: HTTP 5xx — the request REACHED stats.nba.com and the server
+      erred (e.g. gamerotation 500s on pre-tracking games). The proxy is fine, so
+      this is NOT a proxy-health signal and never quarantines.
     - ``notfound``: HTTP 400 / 404 — endpoint genuinely absent (expected for old
-      seasons; benign, NOT a proxy-health signal).
+      seasons; benign).
     - ``blank``: HTTP 200 with an empty body (mild throttle signal).
     - ``ok``: HTTP 200 with a body.
 
-    ``transport_err`` and ``blocked`` are the quarantine-worthy signals (the proxy
-    or the IP is the problem); ``notfound`` never counts against a proxy.
+    Only ``transport_err`` / ``blocked`` / ``blank`` are quarantine-worthy (the
+    proxy or the IP is the problem). ``server_err`` and ``notfound`` never count
+    against a proxy.
     """
     if error is not None:
         return "transport_err"
@@ -37,10 +41,13 @@ def classify(status: Optional[int], text: str, error: Optional[str]) -> str:
         return "ok" if (text or "").strip() else "blank"
     if status in (400, 404):
         return "notfound"
+    if status is not None and 500 <= status < 600:
+        return "server_err"
     return "blocked"
 
 
 _QUARANTINE_CATS = ("transport_err", "blocked", "blank")
+_ERROR_CATS = ("transport_err", "blocked", "blank", "server_err")  # non-benign, worth logging
 
 
 class ProxyHealth:
@@ -51,7 +58,7 @@ class ProxyHealth:
     ``host:port`` so credentials never enter the counters or a log line.
     """
 
-    _CAT_KEYS = ("ok", "blank", "notfound", "blocked", "transport_err")
+    _CAT_KEYS = ("ok", "blank", "notfound", "blocked", "server_err", "transport_err")
 
     def __init__(
         self,
@@ -105,6 +112,7 @@ class ProxyHealth:
                     "blank": 0,
                     "notfound": 0,
                     "blocked": 0,
+                    "server_err": 0,
                     "transport_err": 0,
                 },
             )
@@ -115,10 +123,10 @@ class ProxyHealth:
                 d["consec_err"] += 1
                 if d["consec_err"] >= self.quarantine_fails:  # (re-)bench for a cooldown
                     d["quar_until"] = time.monotonic() + self.quarantine_secs
-            else:  # a good outcome fully rehabilitates the proxy
+            else:  # ok / notfound / server_err: the proxy delivered, so rehabilitate it
                 d["consec_err"] = 0
                 d["quar_until"] = 0.0
-            if self._elog is not None and category in _QUARANTINE_CATS:
+            if self._elog is not None and category in _ERROR_CATS:
                 self._elog.write(
                     json.dumps(
                         {
@@ -178,14 +186,14 @@ class ProxyHealth:
         with self._lock:
             rows = []
             for ep, ec in self.endpoint_cat.items():
-                errs = ec.get("transport_err", 0) + ec.get("blocked", 0) + ec.get("blank", 0)
+                errs = sum(ec.get(c, 0) for c in _ERROR_CATS)
                 if errs >= min_errors:
                     rows.append((ep, errs, dict(ec)))
             rows.sort(key=lambda r: -r[1])
             return rows
 
     def top_error_endpoints(self, n: int = 3) -> str:
-        """Compact 'gamerotation(t12 b40) hustle(b88)' fragment for the heartbeat."""
+        """Compact 'gamerotation(5xx682) hustle(b88)' fragment for the heartbeat."""
         frag = []
         for ep, _errs, ec in self.endpoint_summary()[:n]:
             parts = []
@@ -193,6 +201,8 @@ class ProxyHealth:
                 parts.append(f"t{ec['transport_err']}")
             if ec.get("blocked"):
                 parts.append(f"b{ec['blocked']}")
+            if ec.get("server_err"):
+                parts.append(f"5xx{ec['server_err']}")
             if ec.get("blank"):
                 parts.append(f"z{ec['blank']}")
             frag.append(f"{ep}({' '.join(parts)})")
