@@ -110,12 +110,16 @@ def capture_season(
     prefix: str,
     league_id: str,
     log: Callable[[str], None] = lambda _m: None,
+    skip_endpoints: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[int, int, int]:
     """Fetch every season-level payload for ``season``. Returns (written, skipped, failed).
 
     ``fetch(endpoint, kwargs)`` performs one call and returns the raw payload; the
     caller supplies it so proxy rotation and transport stay in the scraper and this
     module stays offline-testable.
+
+    ``skip_endpoints`` names season-level endpoints to omit entirely (e.g.
+    tracking-era analytics that only 500 for pre-2014 seasons).
     """
     written = skipped = failed = 0
     team_source: Any = None
@@ -139,6 +143,8 @@ def capture_season(
         )
 
     for endpoint, variant, kwargs in plan_season(season, module, prefix, league_id):
+        if endpoint in skip_endpoints:  # tracking-era analytics below its season floor
+            continue
         path = payload_path(root, endpoint, season, variant)
         is_team_source = _is_team_source(endpoint, kwargs)
         if path.exists():
