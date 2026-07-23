@@ -65,6 +65,19 @@ SEASON_TYPES = ("Regular Season", "Playoffs")
 WORKERS = int(os.environ.get("SCRAPE_WORKERS", "6"))
 PERIOD_ENDPOINT = "boxscoretraditionalv3_period"
 
+#: Endpoints not worth attempting before a given season. gamerotation timed out on
+#: ~7% of games every season from 2003-2006 while its coverage sat near half, and
+#: 2004's timeouts resolved to "no data" on retry -- it fails slow rather than
+#: returning empty, so each of those games burnt a full timeout on every pass.
+#: Skipping it outright below the floor costs nothing that was being captured.
+ENDPOINT_MIN_SEASON = {"gamerotation": 2016}
+
+
+def _skip_endpoint(endpoint: str, season: int) -> bool:
+    """Whether this endpoint is known to be unproductive for this season."""
+    floor = ENDPOINT_MIN_SEASON.get(endpoint)
+    return floor is not None and season < floor
+
 
 def _log(msg: str) -> None:
     print(f"[{datetime.now(timezone.utc).strftime('%F %T')}Z] {msg}", flush=True)
@@ -179,7 +192,10 @@ def main(argv: list[str]) -> int:
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
         pbp_payload = None
+        gid_season = season_of(gid)
         for ep in game_endpoints:
+            if _skip_endpoint(ep, gid_season):
+                continue
             path = _raw_store_path(ep, gid, root=store)
             if path is not None and path.exists():
                 if ep == "playbyplayv3":
@@ -286,6 +302,10 @@ def main(argv: list[str]) -> int:
         # endpoint was added would be skipped forever and a backfill would no-op.
         def _incomplete(g: str) -> bool:
             for ep in game_endpoints:
+                # Skipped endpoints must not count as missing, or every game below
+                # the floor stays incomplete forever and is retried on every run.
+                if _skip_endpoint(ep, season):
+                    continue
                 p = _raw_store_path(ep, g, root=store)
                 if p is not None and not p.exists():
                     return True
