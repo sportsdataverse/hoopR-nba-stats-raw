@@ -77,7 +77,15 @@ PERIOD_ENDPOINT = "boxscoretraditionalv3_period"
 _PT = int(os.environ.get("PT_MIN_SEASON", "2013"))  # SportVU player tracking: 2013-14+
 ENDPOINT_MIN_SEASON = {
     # --- game-keyed (probed floors) ---
-    "gamerotation": int(os.environ.get("GAMEROTATION_MIN_SEASON", "2016")),
+    # gamerotation is PARKED (floor above any real season = skipped outright). It
+    # holds real data from 2015-16 on (empty resultSets earlier), but it's a slow
+    # endpoint that times out on most attempts under the main sweep's concurrency,
+    # so it drags every 2016+ season for a low capture rate. Capture it later with a
+    # dedicated low-concurrency pass — everything else is already on disk, so it
+    # skips-as-present and only gamerotation is fetched:
+    #   GAMEROTATION_MIN_SEASON=2016 SCRAPE_WORKERS=3 SDV_PY_NBA_STATS_TIMEOUT=60 \
+    #     bash scripts/backfill_nba_stats_raw.sh 2016:2026
+    "gamerotation": int(os.environ.get("GAMEROTATION_MIN_SEASON", "9999")),
     "boxscorematchupsv3": 2017,  # probed: empty <=2016, populates 2017-18
     "boxscoredefensivev2": 2017,  # probed: empty <=2016, populates 2017-18
     # --- season-level: player-tracking (SportVU) ---
@@ -131,9 +139,7 @@ class Progress:
             return self.season, self.games_done, self.games_total, self.season_start
 
 
-def _heartbeat(
-    progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int
-) -> None:
+def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int) -> None:
     """Emit a steady progress + IP-health line every ``secs`` and WARN when the
     proxy pool degrades. Windowed on the delta since the last beat so the
     error-rate reflects the recent window, not the cumulative run."""
@@ -162,9 +168,7 @@ def _heartbeat(
         # quarantines), NOT 404s (those are expected-absent old-season endpoints).
         win_total = sum(delta.values())
         win_fault = delta["transport_err"] + delta["blocked"]
-        if snap["quar"] >= max(3, pool_size // 5) or (
-            win_total > 50 and win_fault / win_total > 0.35
-        ):
+        if snap["quar"] >= max(3, pool_size // 5) or (win_total > 50 and win_fault / win_total > 0.35):
             worst = ", ".join(f"{k}:{n}" for k, n in snap["worst"]) or "n/a"
             _log(
                 f"WARN: proxy pool degrading — {snap['quar']}/{pool_size} quarantined, "
@@ -308,9 +312,7 @@ def main(argv: list[str]) -> int:
                 out: dict[str, object] = {}
                 for period in range(1, n + 1):
                     start_range, end_range = period_start_range(period, season)
-                    out[str(period)] = getattr(
-                        stats, f"{STATS_PREFIX}_boxscoretraditionalv3"
-                    )(
+                    out[str(period)] = getattr(stats, f"{STATS_PREFIX}_boxscoretraditionalv3")(
                         game_id=g,
                         start_period=period,
                         end_period=period,
@@ -323,9 +325,7 @@ def main(argv: list[str]) -> int:
                 return out
 
             try:
-                _through_raw_store(
-                    PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False
-                )
+                _through_raw_store(PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False)
                 fetched += 1
             except Exception:  # noqa: BLE001 - a period gap must not kill the game
                 failed += 1
@@ -363,9 +363,7 @@ def main(argv: list[str]) -> int:
             _log,
             skip_endpoints=skip_season_eps,
         )
-        _log(
-            f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed"
-        )
+        _log(f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed")
 
         gids: set[str] = set()
         for stype in SEASON_TYPES:
@@ -377,11 +375,7 @@ def main(argv: list[str]) -> int:
             ):
                 if candidate.exists():
                     try:
-                        gids.update(
-                            game_ids_from_gamelog(
-                                json.loads(candidate.read_text(encoding="utf-8"))
-                            )
-                        )
+                        gids.update(game_ids_from_gamelog(json.loads(candidate.read_text(encoding="utf-8"))))
                     except (OSError, json.JSONDecodeError) as exc:
                         _log(f"season {season} {stype}: game-index read failed: {exc}")
                     break
@@ -390,9 +384,7 @@ def main(argv: list[str]) -> int:
         # were never captured. Without the second half, games captured before an
         # endpoint was added would be skipped forever and a backfill would no-op.
         def _incomplete(g: str) -> bool:
-            for ep in _endpoints_for(
-                g
-            ):  # gamerotation is not "missing" for pre-2016 games
+            for ep in _endpoints_for(g):  # gamerotation is not "missing" for pre-2016 games
                 p = _raw_store_path(ep, g, root=store)
                 if p is not None and not p.exists():
                     return True
