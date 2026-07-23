@@ -98,7 +98,9 @@ class Progress:
             return self.season, self.games_done, self.games_total, self.season_start
 
 
-def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int) -> None:
+def _heartbeat(
+    progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int
+) -> None:
     """Emit a steady progress + IP-health line every ``secs`` and WARN when the
     proxy pool degrades. Windowed on the delta since the last beat so the
     error-rate reflects the recent window, not the cumulative run."""
@@ -126,7 +128,9 @@ def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: floa
         # quarantines), NOT 404s (those are expected-absent old-season endpoints).
         win_total = sum(delta.values())
         win_fault = delta["transport_err"] + delta["blocked"]
-        if snap["quar"] >= max(3, pool_size // 5) or (win_total > 50 and win_fault / win_total > 0.35):
+        if snap["quar"] >= max(3, pool_size // 5) or (
+            win_total > 50 and win_fault / win_total > 0.35
+        ):
             worst = ", ".join(f"{k}:{n}" for k, n in snap["worst"]) or "n/a"
             _log(
                 f"WARN: proxy pool degrading — {snap['quar']}/{pool_size} quarantined, "
@@ -166,7 +170,7 @@ def main(argv: list[str]) -> int:
         periods_in_game,
         season_of,
     )
-    from proxy import RoundRobin, load_proxies
+    from proxy import ProxyHealth, RoundRobin, classify, load_proxies
     from season_capture import capture_season, game_ids_from_gamelog, payload_path
     from sportsdataverse.nba.nba_possessions import _raw_store_path, _through_raw_store
 
@@ -174,7 +178,9 @@ def main(argv: list[str]) -> int:
     # every fetch's (proxy, status, latency, error) feeds ProxyHealth. League-
     # agnostic: prefer the league's runtime module, fall back to the NBA one.
     try:
-        _rt = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}_runtime")
+        _rt = importlib.import_module(
+            f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}_runtime"
+        )
         _curl_transport = _rt._curl_transport
     except (ImportError, AttributeError):
         pass
@@ -203,7 +209,9 @@ def main(argv: list[str]) -> int:
         _log("--check: sweep sized and proxy pool verified; fetching nothing")
         return 0
 
-    health = ProxyHealth(quarantine_fails=int(os.environ.get("PROXY_QUARANTINE_FAILS", "5")))
+    health = ProxyHealth(
+        quarantine_fails=int(os.environ.get("PROXY_QUARANTINE_FAILS", "5"))
+    )
     rr = RoundRobin(pool, health=health)
 
     def _instrumented(url: str, params: dict, headers: dict, proxy_url) -> tuple:
@@ -215,16 +223,25 @@ def main(argv: list[str]) -> int:
         except Exception:
             health.record(proxy_url, "transport_err", (time.monotonic() - t0) * 1000)
             raise  # preserve the "timeout propagates" contract for the miss count
-        health.record(proxy_url, classify(status, text, None), (time.monotonic() - t0) * 1000)
+        health.record(
+            proxy_url, classify(status, text, None), (time.monotonic() - t0) * 1000
+        )
         return status, text
 
     def _season_fetch(endpoint: str, kwargs: dict) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(return_parsed=False, proxy_url=rr.next(), transport=_instrumented, **kwargs)
+        return fn(
+            return_parsed=False, proxy_url=rr.next(), transport=_instrumented, **kwargs
+        )
 
     def _game_fetch(endpoint: str, gid: str) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(game_id=gid, return_parsed=False, proxy_url=rr.next(), transport=_instrumented)
+        return fn(
+            game_id=gid,
+            return_parsed=False,
+            proxy_url=rr.next(),
+            transport=_instrumented,
+        )
 
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
@@ -275,7 +292,9 @@ def main(argv: list[str]) -> int:
                 out: dict[str, object] = {}
                 for period in range(1, n + 1):
                     start_range, end_range = period_start_range(period, season)
-                    out[str(period)] = getattr(stats, f"{STATS_PREFIX}_boxscoretraditionalv3")(
+                    out[str(period)] = getattr(
+                        stats, f"{STATS_PREFIX}_boxscoretraditionalv3"
+                    )(
                         game_id=g,
                         start_period=period,
                         end_period=period,
@@ -289,7 +308,9 @@ def main(argv: list[str]) -> int:
                 return out
 
             try:
-                _through_raw_store(PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False)
+                _through_raw_store(
+                    PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False
+                )
                 fetched += 1
             except Exception:  # noqa: BLE001 - a period gap must not kill the game
                 failed += 1
@@ -301,7 +322,13 @@ def main(argv: list[str]) -> int:
     stop_hb = threading.Event()
     hb = threading.Thread(
         target=_heartbeat,
-        args=(progress, health, stop_hb, float(os.environ.get("HEARTBEAT_SECS", "60")), len(pool)),
+        args=(
+            progress,
+            health,
+            stop_hb,
+            float(os.environ.get("HEARTBEAT_SECS", "60")),
+            len(pool),
+        ),
         daemon=True,
     )
     hb.start()
@@ -313,7 +340,9 @@ def main(argv: list[str]) -> int:
         s_written, s_skipped, s_failed = capture_season(
             season, store, _season_fetch, stats, STATS_PREFIX, LEAGUE_ID, _log
         )
-        _log(f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed")
+        _log(
+            f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed"
+        )
 
         gids: set[str] = set()
         for stype in SEASON_TYPES:
@@ -325,7 +354,11 @@ def main(argv: list[str]) -> int:
             ):
                 if candidate.exists():
                     try:
-                        gids.update(game_ids_from_gamelog(json.loads(candidate.read_text(encoding="utf-8"))))
+                        gids.update(
+                            game_ids_from_gamelog(
+                                json.loads(candidate.read_text(encoding="utf-8"))
+                            )
+                        )
                     except (OSError, json.JSONDecodeError) as exc:
                         _log(f"season {season} {stype}: game-index read failed: {exc}")
                     break
