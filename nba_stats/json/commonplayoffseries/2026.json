@@ -1,0 +1,1 @@
+{"resource": "commonplayoffseries", "parameters": {"LeagueID": "00", "Season": "2026", "SeriesID": null}, "resultSets": [{"name": "PlayoffSeries", "headers": ["GAME_ID", "HOME_TEAM_ID", "VISITOR_TEAM_ID", "SERIES_ID", "GAME_NUM"], "rowSet": []}]}
