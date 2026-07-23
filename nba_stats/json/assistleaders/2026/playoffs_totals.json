@@ -1,0 +1,1 @@
+{"resource": "assistleaders", "parameters": {"LeagueID": "00", "Season": "2026", "SeasonType": "Playoffs", "PerMode": "Totals", "PlayerOrTeam": "Team"}, "resultSets": [{"name": "AssistLeaders", "headers": ["RANK", "TEAM_ID", "TEAM_ABBREVIATION", "TEAM_NAME", "AST"], "rowSet": []}]}
