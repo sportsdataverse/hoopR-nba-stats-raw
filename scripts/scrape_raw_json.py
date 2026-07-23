@@ -100,9 +100,7 @@ class Progress:
             return self.season, self.games_done, self.games_total, self.season_start
 
 
-def _heartbeat(
-    progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int
-) -> None:
+def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int) -> None:
     """Emit a steady progress + IP-health line every ``secs`` and WARN when the
     proxy pool degrades. Windowed on the delta since the last beat so the
     error-rate reflects the recent window, not the cumulative run."""
@@ -124,15 +122,14 @@ def _heartbeat(
             f"season {season}: {done}/{total} games | {rate:.1f}/s | ETA {eta_s} | "
             f"win[ok={delta['ok']} blank={delta['blank']} 404={delta['notfound']} "
             f"blocked={delta['blocked']} timeout/err={delta['transport_err']}] | "
-            f"proxies {snap['healthy']}ok/{snap['degraded']}deg/{snap['quar']}quar of {pool_size}"
+            f"proxies {snap['healthy']}ok/{snap['degraded']}deg/{snap['quar']}quar of {pool_size} | "
+            f"top-err: {health.top_error_endpoints(3)}"
         )
         # Degradation WARN — driven by proxy-fault signals (timeouts + blocks +
         # quarantines), NOT 404s (those are expected-absent old-season endpoints).
         win_total = sum(delta.values())
         win_fault = delta["transport_err"] + delta["blocked"]
-        if snap["quar"] >= max(3, pool_size // 5) or (
-            win_total > 50 and win_fault / win_total > 0.35
-        ):
+        if snap["quar"] >= max(3, pool_size // 5) or (win_total > 50 and win_fault / win_total > 0.35):
             worst = ", ".join(f"{k}:{n}" for k, n in snap["worst"]) or "n/a"
             _log(
                 f"WARN: proxy pool degrading — {snap['quar']}/{pool_size} quarantined, "
@@ -180,9 +177,7 @@ def main(argv: list[str]) -> int:
     # every fetch's (proxy, status, latency, error) feeds ProxyHealth. League-
     # agnostic: prefer the league's runtime module, fall back to the NBA one.
     try:
-        _rt = importlib.import_module(
-            f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}_runtime"
-        )
+        _rt = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}_runtime")
         _curl_transport = _rt._curl_transport
     except (ImportError, AttributeError):
         pass
@@ -214,28 +209,42 @@ def main(argv: list[str]) -> int:
     health = ProxyHealth(
         quarantine_fails=int(os.environ.get("PROXY_QUARANTINE_FAILS", "5")),
         quarantine_secs=float(os.environ.get("PROXY_QUARANTINE_SECS", "120")),
+        error_log=os.environ.get("STATS_ERROR_LOG", "logs/errors.jsonl"),
     )
     rr = RoundRobin(pool, health=health)
 
     def _instrumented(url: str, params: dict, headers: dict, proxy_url) -> tuple:
-        """Wrap the real curl_cffi transport to record per-fetch health, then
-        return ``(status, text)`` unchanged so the store/parse path is identical."""
+        """Wrap the real curl_cffi transport to record per-fetch health (keyed by
+        endpoint + resource so errors aggregate by request), then return
+        ``(status, text)`` unchanged so the store/parse path is identical."""
+        endpoint = url.rsplit("/stats/", 1)[-1].split("?")[0] if "/stats/" in url else url
+        resource = str((params or {}).get("GameID") or (params or {}).get("Season") or "")
         t0 = time.monotonic()
         try:
             status, text = _curl_transport(url, params, headers, proxy_url)
         except Exception:
-            health.record(proxy_url, "transport_err", (time.monotonic() - t0) * 1000)
+            health.record(
+                proxy_url,
+                "transport_err",
+                (time.monotonic() - t0) * 1000,
+                endpoint=endpoint,
+                resource=resource,
+                status=None,
+            )
             raise  # preserve the "timeout propagates" contract for the miss count
         health.record(
-            proxy_url, classify(status, text, None), (time.monotonic() - t0) * 1000
+            proxy_url,
+            classify(status, text, None),
+            (time.monotonic() - t0) * 1000,
+            endpoint=endpoint,
+            resource=resource,
+            status=status,
         )
         return status, text
 
     def _season_fetch(endpoint: str, kwargs: dict) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(
-            return_parsed=False, proxy_url=rr.next(), transport=_instrumented, **kwargs
-        )
+        return fn(return_parsed=False, proxy_url=rr.next(), transport=_instrumented, **kwargs)
 
     def _game_fetch(endpoint: str, gid: str) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
@@ -295,9 +304,7 @@ def main(argv: list[str]) -> int:
                 out: dict[str, object] = {}
                 for period in range(1, n + 1):
                     start_range, end_range = period_start_range(period, season)
-                    out[str(period)] = getattr(
-                        stats, f"{STATS_PREFIX}_boxscoretraditionalv3"
-                    )(
+                    out[str(period)] = getattr(stats, f"{STATS_PREFIX}_boxscoretraditionalv3")(
                         game_id=g,
                         start_period=period,
                         end_period=period,
@@ -311,9 +318,7 @@ def main(argv: list[str]) -> int:
                 return out
 
             try:
-                _through_raw_store(
-                    PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False
-                )
+                _through_raw_store(PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False)
                 fetched += 1
             except Exception:  # noqa: BLE001 - a period gap must not kill the game
                 failed += 1
@@ -343,9 +348,7 @@ def main(argv: list[str]) -> int:
         s_written, s_skipped, s_failed = capture_season(
             season, store, _season_fetch, stats, STATS_PREFIX, LEAGUE_ID, _log
         )
-        _log(
-            f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed"
-        )
+        _log(f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed")
 
         gids: set[str] = set()
         for stype in SEASON_TYPES:
@@ -357,11 +360,7 @@ def main(argv: list[str]) -> int:
             ):
                 if candidate.exists():
                     try:
-                        gids.update(
-                            game_ids_from_gamelog(
-                                json.loads(candidate.read_text(encoding="utf-8"))
-                            )
-                        )
+                        gids.update(game_ids_from_gamelog(json.loads(candidate.read_text(encoding="utf-8"))))
                     except (OSError, json.JSONDecodeError) as exc:
                         _log(f"season {season} {stype}: game-index read failed: {exc}")
                     break
@@ -399,8 +398,25 @@ def main(argv: list[str]) -> int:
             f" blocked={c['blocked']} timeout/err={c['transport_err']}]"
             f" | proxies {snap['quar']} quarantined of {len(pool)}"
         )
+        breakdown = health.endpoint_summary()
+        if breakdown:
+            _log(
+                "  errors by endpoint (cumulative): "
+                + " | ".join(
+                    f"{ep}[t={ec.get('transport_err', 0)} b={ec.get('blocked', 0)} z={ec.get('blank', 0)}]"
+                    for ep, _e, ec in breakdown[:8]
+                )
+            )
 
     stop_hb.set()
+    # Full by-endpoint/type breakdown so 'which requests errored and why' is
+    # answerable without opening the JSONL (which has the per-resource detail).
+    for ep, errs, ec in health.endpoint_summary():
+        _log(
+            f"endpoint {ep}: {errs} faults | ok={ec['ok']} 404={ec['notfound']}"
+            f" blocked={ec['blocked']} blank={ec['blank']} timeout/err={ec['transport_err']}"
+        )
+    health.close()
     _log(
         f"sweep complete: {grand_fetched} payloads persisted, {grand_failed} misses"
         " (endpoint gaps are expected in early seasons)"

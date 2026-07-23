@@ -51,7 +51,14 @@ class ProxyHealth:
     ``host:port`` so credentials never enter the counters or a log line.
     """
 
-    def __init__(self, quarantine_fails: int = 5, quarantine_secs: float = 120.0):
+    _CAT_KEYS = ("ok", "blank", "notfound", "blocked", "transport_err")
+
+    def __init__(
+        self,
+        quarantine_fails: int = 5,
+        quarantine_secs: float = 120.0,
+        error_log: Optional[str] = None,
+    ):
         self._lock = threading.Lock()
         self._per: dict[str, dict[str, Any]] = {}
         self.quarantine_fails = quarantine_fails
@@ -59,16 +66,34 @@ class ProxyHealth:
         # consecutive-fault threshold is benched for quarantine_secs then retried,
         # so a transient block storm can't sideline good IPs forever.
         self.quarantine_secs = quarantine_secs
-        self.cat: dict[str, int] = {
-            k: 0 for k in ("ok", "blank", "notfound", "blocked", "transport_err")
-        }
+        self.cat: dict[str, int] = {k: 0 for k in self._CAT_KEYS}
+        # Aggregate outcomes by endpoint too, so "which requests error and why"
+        # is answerable: endpoint -> {category: count}.
+        self.endpoint_cat: dict[str, dict[str, int]] = {}
+        # Optional append-only JSONL of every non-ok outcome (the queryable
+        # by-endpoint/type/resource drill-down). One line: ts, endpoint,
+        # resource (game_id/season), status, cat, latency, proxy.
+        self._elog = None
+        if error_log:
+            try:
+                self._elog = open(error_log, "a", encoding="utf-8")  # noqa: SIM115
+            except OSError:
+                self._elog = None
 
     def record(
-        self, proxy_url: Optional[str], category: str, latency_ms: float = 0.0
+        self,
+        proxy_url: Optional[str],
+        category: str,
+        latency_ms: float = 0.0,
+        endpoint: str = "?",
+        resource: str = "",
+        status: Optional[int] = None,
     ) -> None:
         key = redact(proxy_url) if proxy_url else "direct"
         with self._lock:
             self.cat[category] = self.cat.get(category, 0) + 1
+            ec = self.endpoint_cat.setdefault(endpoint, {k: 0 for k in self._CAT_KEYS})
+            ec[category] = ec.get(category, 0) + 1
             d = self._per.setdefault(
                 key,
                 {
@@ -88,13 +113,27 @@ class ProxyHealth:
             d["lat_ms"] = latency_ms
             if category in _QUARANTINE_CATS:
                 d["consec_err"] += 1
-                if (
-                    d["consec_err"] >= self.quarantine_fails
-                ):  # (re-)bench for a cooldown
+                if d["consec_err"] >= self.quarantine_fails:  # (re-)bench for a cooldown
                     d["quar_until"] = time.monotonic() + self.quarantine_secs
             else:  # a good outcome fully rehabilitates the proxy
                 d["consec_err"] = 0
                 d["quar_until"] = 0.0
+            if self._elog is not None and category in _QUARANTINE_CATS:
+                self._elog.write(
+                    json.dumps(
+                        {
+                            "ts": round(time.time(), 3),
+                            "endpoint": endpoint,
+                            "resource": resource,
+                            "status": status,
+                            "cat": category,
+                            "lat_ms": round(latency_ms, 1),
+                            "proxy": key,
+                        }
+                    )
+                    + "\n"
+                )
+                self._elog.flush()
 
     def is_quarantined(self, proxy_url: Optional[str]) -> bool:
         key = redact(proxy_url) if proxy_url else "direct"
@@ -131,6 +170,40 @@ class ProxyHealth:
                 "used": len(self._per),
                 "worst": worst[:3],
             }
+
+    def endpoint_summary(self, min_errors: int = 1) -> list[tuple]:
+        """(endpoint, err_total, {cat: count}) for every endpoint with >=
+        min_errors non-benign outcomes, worst first. Feeds the season/final
+        breakdown and answers 'which requests error, and how'."""
+        with self._lock:
+            rows = []
+            for ep, ec in self.endpoint_cat.items():
+                errs = ec.get("transport_err", 0) + ec.get("blocked", 0) + ec.get("blank", 0)
+                if errs >= min_errors:
+                    rows.append((ep, errs, dict(ec)))
+            rows.sort(key=lambda r: -r[1])
+            return rows
+
+    def top_error_endpoints(self, n: int = 3) -> str:
+        """Compact 'gamerotation(t12 b40) hustle(b88)' fragment for the heartbeat."""
+        frag = []
+        for ep, _errs, ec in self.endpoint_summary()[:n]:
+            parts = []
+            if ec.get("transport_err"):
+                parts.append(f"t{ec['transport_err']}")
+            if ec.get("blocked"):
+                parts.append(f"b{ec['blocked']}")
+            if ec.get("blank"):
+                parts.append(f"z{ec['blank']}")
+            frag.append(f"{ep}({' '.join(parts)})")
+        return " ".join(frag) or "none"
+
+    def close(self) -> None:
+        if self._elog is not None:
+            try:
+                self._elog.close()
+            except OSError:
+                pass
 
 
 def load_proxies() -> list[dict[str, Any]]:
@@ -196,9 +269,7 @@ class RoundRobin:
             ``password``), e.g. from :func:`load_proxies`.
     """
 
-    def __init__(
-        self, proxies: list[dict[str, Any]], health: "Optional[ProxyHealth]" = None
-    ):
+    def __init__(self, proxies: list[dict[str, Any]], health: "Optional[ProxyHealth]" = None):
         self._proxies = list(proxies)
         self._order = list(range(len(self._proxies)))
         random.shuffle(self._order)
