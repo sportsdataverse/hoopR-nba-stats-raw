@@ -43,7 +43,7 @@ fi
 
 export PYTHONUNBUFFERED=1      # real-time log lines, no buffering lag
 export PYTHONIOENCODING=utf-8  # cp1252 chokes on unicode in piped output
-export SCRAPE_WORKERS="${SCRAPE_WORKERS:-8}"          # pace knob; lower if the pool gets throttled
+export SCRAPE_WORKERS="${SCRAPE_WORKERS:-16}"         # pace knob; lower if the pool gets throttled
 export PROXY_QUARANTINE_SECS="${PROXY_QUARANTINE_SECS:-600}"  # cooldown for a blocked proxy before retry
 
 mkdir -p logs
