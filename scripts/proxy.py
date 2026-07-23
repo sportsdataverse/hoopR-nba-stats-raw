@@ -12,6 +12,7 @@ import json
 import os
 import random
 import threading
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Optional
@@ -50,13 +51,21 @@ class ProxyHealth:
     ``host:port`` so credentials never enter the counters or a log line.
     """
 
-    def __init__(self, quarantine_fails: int = 5):
+    def __init__(self, quarantine_fails: int = 5, quarantine_secs: float = 120.0):
         self._lock = threading.Lock()
         self._per: dict[str, dict[str, Any]] = {}
         self.quarantine_fails = quarantine_fails
-        self.cat: dict[str, int] = {k: 0 for k in ("ok", "blank", "notfound", "blocked", "transport_err")}
+        # Quarantine is a COOLDOWN, not a death sentence: a proxy that trips the
+        # consecutive-fault threshold is benched for quarantine_secs then retried,
+        # so a transient block storm can't sideline good IPs forever.
+        self.quarantine_secs = quarantine_secs
+        self.cat: dict[str, int] = {
+            k: 0 for k in ("ok", "blank", "notfound", "blocked", "transport_err")
+        }
 
-    def record(self, proxy_url: Optional[str], category: str, latency_ms: float = 0.0) -> None:
+    def record(
+        self, proxy_url: Optional[str], category: str, latency_ms: float = 0.0
+    ) -> None:
         key = redact(proxy_url) if proxy_url else "direct"
         with self._lock:
             self.cat[category] = self.cat.get(category, 0) + 1
@@ -65,6 +74,7 @@ class ProxyHealth:
                 {
                     "req": 0,
                     "consec_err": 0,
+                    "quar_until": 0.0,
                     "lat_ms": 0.0,
                     "ok": 0,
                     "blank": 0,
@@ -76,25 +86,35 @@ class ProxyHealth:
             d["req"] += 1
             d[category] = d.get(category, 0) + 1
             d["lat_ms"] = latency_ms
-            d["consec_err"] = d["consec_err"] + 1 if category in _QUARANTINE_CATS else 0
+            if category in _QUARANTINE_CATS:
+                d["consec_err"] += 1
+                if (
+                    d["consec_err"] >= self.quarantine_fails
+                ):  # (re-)bench for a cooldown
+                    d["quar_until"] = time.monotonic() + self.quarantine_secs
+            else:  # a good outcome fully rehabilitates the proxy
+                d["consec_err"] = 0
+                d["quar_until"] = 0.0
 
     def is_quarantined(self, proxy_url: Optional[str]) -> bool:
         key = redact(proxy_url) if proxy_url else "direct"
         with self._lock:
             d = self._per.get(key)
-            return bool(d and d["consec_err"] >= self.quarantine_fails)
+            return bool(d and d["quar_until"] > time.monotonic())
 
     def reset_quarantine(self) -> None:
         with self._lock:
             for d in self._per.values():
                 d["consec_err"] = 0
+                d["quar_until"] = 0.0
 
     def snapshot(self) -> dict:
         with self._lock:
             healthy = degraded = quar = 0
             worst = []
+            now = time.monotonic()
             for k, d in self._per.items():
-                if d["consec_err"] >= self.quarantine_fails:
+                if d["quar_until"] > now:
                     quar += 1
                     worst.append((k, d["consec_err"]))
                 elif d["consec_err"] >= 2:
@@ -153,7 +173,12 @@ def load_proxies() -> list[dict[str, Any]]:
     login = data.get("login")
     password = data.get("password")
     return [
-        {"ip": pack["ip"], "port": pack["port_http"], "login": login, "password": password}
+        {
+            "ip": pack["ip"],
+            "port": pack["port_http"],
+            "login": login,
+            "password": password,
+        }
         for pack in ippacks
         if isinstance(pack, dict) and pack.get("ip") and pack.get("port_http")
     ]
@@ -171,7 +196,9 @@ class RoundRobin:
             ``password``), e.g. from :func:`load_proxies`.
     """
 
-    def __init__(self, proxies: list[dict[str, Any]], health: "Optional[ProxyHealth]" = None):
+    def __init__(
+        self, proxies: list[dict[str, Any]], health: "Optional[ProxyHealth]" = None
+    ):
         self._proxies = list(proxies)
         self._order = list(range(len(self._proxies)))
         random.shuffle(self._order)

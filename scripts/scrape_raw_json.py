@@ -212,7 +212,8 @@ def main(argv: list[str]) -> int:
         return 0
 
     health = ProxyHealth(
-        quarantine_fails=int(os.environ.get("PROXY_QUARANTINE_FAILS", "5"))
+        quarantine_fails=int(os.environ.get("PROXY_QUARANTINE_FAILS", "5")),
+        quarantine_secs=float(os.environ.get("PROXY_QUARANTINE_SECS", "120")),
     )
     rr = RoundRobin(pool, health=health)
 
