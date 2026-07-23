@@ -185,3 +185,22 @@ def test_no_warning_below_the_sample_floor() -> None:
     led.record("x", ERROR)
     Degradation(ProxyHealth(10), led, lines.append).check()
     assert lines == [], "one bad call must not raise an alarm"
+
+
+def test_since_reports_one_season_not_the_whole_run() -> None:
+    """The ledger spans the run; a per-season line must not print run totals."""
+    led = MissLedger()
+    for _ in range(81):
+        led.record("gamerotation", TIMEOUT)
+    mark = led.snapshot()
+    for _ in range(209):
+        led.record("gamerotation", TIMEOUT)
+    assert "timeout=209" in led.since(mark), "must report the season, not 290"
+    assert led.real_failures_since(mark) == 209
+    assert led.real_failures == 290, "the run total is still available"
+
+
+def test_since_on_an_unchanged_ledger_is_empty() -> None:
+    led = MissLedger()
+    led.record("x", OK)
+    assert led.since(led.snapshot()) == "no fetches"

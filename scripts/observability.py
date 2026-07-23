@@ -151,6 +151,28 @@ class MissLedger:
         """Misses that are actually wrong -- absent endpoints are not."""
         return sum(v for k, v in self.totals.items() if k not in (OK, ENDPOINT_ABSENT))
 
+    def snapshot(self) -> Counter:
+        """Copy of the current totals, for diffing one season against the run."""
+        return Counter(self.totals)
+
+    def since(self, mark: Counter) -> str:
+        """Outcome breakdown accumulated since ``mark`` -- i.e. this season only.
+
+        The ledger spans the whole run, so reporting its totals under a per-season
+        heading silently invites mis-attribution: a season's numbers look like the
+        run's. Callers mark at season start and report the delta.
+        """
+        delta = {k: self.totals[k] - mark.get(k, 0) for k in self.totals}
+        parts = [f"{k}={v}" for k, v in sorted(delta.items()) if v]
+        return " ".join(parts) if parts else "no fetches"
+
+    def real_failures_since(self, mark: Counter) -> int:
+        return sum(
+            self.totals[k] - mark.get(k, 0)
+            for k in self.totals
+            if k not in (OK, ENDPOINT_ABSENT)
+        )
+
     def summary(self) -> str:
         if not self.totals:
             return "no fetches"

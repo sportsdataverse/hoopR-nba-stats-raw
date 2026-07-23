@@ -260,6 +260,8 @@ def main(argv: list[str]) -> int:
             f" | {s_skipped} present | {s_failed} failed"
         )
 
+        season_mark = ledger.snapshot()
+
         gids: set[str] = set()
         for stype in SEASON_TYPES:
             path = payload_path(store, "leaguegamelog", season, None)
@@ -310,11 +312,14 @@ def main(argv: list[str]) -> int:
         grand_failed += failed
         _log(
             f"season {season}: done | {fetched} payloads fetched | {failed} misses"
-            f" [{ledger.summary()}]"
+            f" [{ledger.since(season_mark)}]"
         )
         _log(f"season {season}: {proxies.summary()}")
-        if ledger.real_failures:
-            _log(f"season {season}: real failures by endpoint -> {ledger.worst_endpoints()}")
+        if ledger.real_failures_since(season_mark):
+            _log(
+                f"season {season}: real failures (run total) by endpoint"
+                f" -> {ledger.worst_endpoints()}"
+            )
 
     _log(
         f"sweep complete: {grand_fetched} payloads persisted, {grand_failed} misses"
