@@ -13,8 +13,15 @@ rotation policy bounds per-IP exposure and self-heals:
 and it never binds a quarantined proxy (it draws from the same quarantine-aware
 ``RoundRobin``). Injected via the wrapper ``transport=`` hook, so sdv-py is
 unchanged. Every fetch is recorded to ``ProxyHealth`` with its endpoint + full
-params + status + latency + proxy + session id, so same-endpoint/different-param
-requests are individually distinguishable in the error log.
+params + status + latency + proxy + session id + session request number, so
+same-endpoint/different-param requests are individually distinguishable in the
+error log.
+
+Transient server-side 500s (stats.nba.com intermittently 500s an individual
+historical game/endpoint even though the data exists) are retried in-session on
+the SAME proxy up to SESSION_SERVER_ERR_RETRIES (default 2) — the IP is healthy,
+so rebinding would be wasteful. Timeouts / blocks are NOT retried here: they stay
+single-shot and rotate, preserving the fast-on-faults contract.
 """
 
 from __future__ import annotations
@@ -39,6 +46,11 @@ class SessionTransport:
         )
         self.max_secs = float(os.environ.get("SESSION_MAX_SECS", str(max_secs)))
         self.timeout = float(os.environ.get("SDV_PY_NBA_STATS_TIMEOUT", "30"))
+        # stats.nba.com 500s intermittently on individual historical games even
+        # though the data exists (measured: the same game/endpoint recovers on an
+        # immediate re-request). Retry the CHEAP server_err class in-session;
+        # timeouts/blocks stay single-shot (the fast-on-faults contract).
+        self.server_err_retries = int(os.environ.get("SESSION_SERVER_ERR_RETRIES", "2"))
         self._tls = threading.local()
         self._ids = itertools.count(1)
         self._id_lock = threading.Lock()
@@ -106,6 +118,36 @@ class SessionTransport:
         st.n += 1
         lat = (time.monotonic() - t0) * 1000
         cat = classify(status, text, None)
+        # Recover transient server-side 500s on the SAME proxy (the IP is fine, the
+        # server erred). Only the final outcome is recorded, so a recovered 500 logs
+        # nothing and a persistent one logs a single server_err.
+        tries = 0
+        while cat == "server_err" and tries < self.server_err_retries:
+            tries += 1
+            st.n += 1
+            t0 = time.monotonic()
+            try:
+                r = st.sess.get(
+                    url, params=params, headers=headers, timeout=self.timeout
+                )
+                status, text = r.status_code, r.text
+            except Exception:
+                lat = (time.monotonic() - t0) * 1000
+                self.health.record(
+                    st.proxy,
+                    "transport_err",
+                    lat,
+                    endpoint=endpoint,
+                    resource=resource,
+                    status=None,
+                    params=params,
+                    session_id=st.sid,
+                    session_req=st_req,
+                )
+                self._bind(st)
+                raise
+            lat = (time.monotonic() - t0) * 1000
+            cat = classify(status, text, None)
         self.health.record(
             st.proxy,
             cat,
