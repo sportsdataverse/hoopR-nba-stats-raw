@@ -103,6 +103,14 @@ def main(argv: list[str]) -> int:
         season_of,
     )
     from proxy import RoundRobin, load_proxies
+    from observability import (
+        OK,
+        Degradation,
+        MissLedger,
+        Progress,
+        ProxyHealth,
+        classify,
+    )
     from season_capture import capture_season, game_ids_from_gamelog, payload_path
     from sportsdataverse.nba.nba_possessions import _raw_store_path, _through_raw_store
 
@@ -131,14 +139,42 @@ def main(argv: list[str]) -> int:
         return 0
 
     rr = RoundRobin(pool)
+    proxies = ProxyHealth(len(pool))
+    ledger = MissLedger()
+    degradation = Degradation(proxies, ledger, _log)
+
+    def _tracked(endpoint: str, call):
+        """Run one fetch, recording its outcome against the endpoint and the proxy.
+
+        Returns (payload, outcome). The proxy is chosen here rather than inside
+        sdv-py, so attributing an outcome to an IP needs nothing from upstream.
+        """
+        proxy = rr.next()
+        try:
+            payload = call(proxy)
+        except Exception as exc:  # noqa: BLE001 - classified, not swallowed
+            outcome = classify(exc)
+            ledger.record(endpoint, outcome)
+            proxies.record(proxy, outcome)
+            raise
+        outcome = classify(None, payload)
+        ledger.record(endpoint, outcome)
+        proxies.record(proxy, outcome)
+        return payload, outcome
 
     def _season_fetch(endpoint: str, kwargs: dict) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(return_parsed=False, proxy_url=rr.next(), **kwargs)
+        payload, _outcome = _tracked(
+            endpoint, lambda p: fn(return_parsed=False, proxy_url=p, **kwargs)
+        )
+        return payload
 
     def _game_fetch(endpoint: str, gid: str) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(game_id=gid, return_parsed=False, proxy_url=rr.next())
+        payload, _outcome = _tracked(
+            endpoint, lambda p: fn(game_id=gid, return_parsed=False, proxy_url=p)
+        )
+        return payload
 
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
@@ -259,14 +295,26 @@ def main(argv: list[str]) -> int:
         if not todo:
             continue
         fetched = failed = 0
+        progress = Progress(len(todo), f"season {season}", _log)
         with ThreadPoolExecutor(max_workers=WORKERS) as pool_exec:
             for fut in as_completed(pool_exec.submit(_one, g) for g in todo):
                 f, x = fut.result()
                 fetched += f
                 failed += x
+                # Heartbeat every ~60s: without it the sweep is silent for the
+                # 30-60 minutes a season takes, and a hang is indistinguishable
+                # from normal work until the clock stops moving.
+                progress.advance(f)
+                degradation.check()
         grand_fetched += fetched
         grand_failed += failed
-        _log(f"season {season}: done | {fetched} payloads fetched | {failed} misses")
+        _log(
+            f"season {season}: done | {fetched} payloads fetched | {failed} misses"
+            f" [{ledger.summary()}]"
+        )
+        _log(f"season {season}: {proxies.summary()}")
+        if ledger.real_failures:
+            _log(f"season {season}: real failures by endpoint -> {ledger.worst_endpoints()}")
 
     _log(
         f"sweep complete: {grand_fetched} payloads persisted, {grand_failed} misses"
