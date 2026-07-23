@@ -1,0 +1,1 @@
+{"meta": {"version": 1, "request": "http://nba.cloud/league/00/2022/06/26/scoreboard?Format=json", "time": "2025-02-18T13:50:42.5042Z"}, "scoreboard": {"gameDate": "2022-06-26", "leagueId": "00", "leagueName": "National Basketball Association", "games": []}}
