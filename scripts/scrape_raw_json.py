@@ -70,6 +70,70 @@ def _log(msg: str) -> None:
     print(f"[{datetime.now(timezone.utc).strftime('%F %T')}Z] {msg}", flush=True)
 
 
+class Progress:
+    """Shared per-game progress, updated by the main consume loop and read by the
+    heartbeat thread. games_done is per-season so the rate/ETA reflect now, not
+    the whole run."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.season: object = None
+        self.games_done = 0
+        self.games_total = 0
+        self.season_start = time.monotonic()
+
+    def begin_season(self, season: object, total: int) -> None:
+        with self.lock:
+            self.season = season
+            self.games_done = 0
+            self.games_total = total
+            self.season_start = time.monotonic()
+
+    def tick(self) -> None:
+        with self.lock:
+            self.games_done += 1
+
+    def snapshot(self) -> tuple:
+        with self.lock:
+            return self.season, self.games_done, self.games_total, self.season_start
+
+
+def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int) -> None:
+    """Emit a steady progress + IP-health line every ``secs`` and WARN when the
+    proxy pool degrades. Windowed on the delta since the last beat so the
+    error-rate reflects the recent window, not the cumulative run."""
+    last = {}
+    while not stop_evt.wait(secs):
+        season, done, total, t0 = progress.snapshot()
+        if not total:
+            continue
+        elapsed = max(time.monotonic() - t0, 1e-6)
+        rate = done / elapsed
+        remaining = max(total - done, 0)
+        eta_min = (remaining / rate / 60) if rate > 0 else float("inf")
+        snap = health.snapshot()
+        c = snap["cat"]
+        delta = {k: c.get(k, 0) - last.get(k, 0) for k in c}
+        last = dict(c)
+        eta_s = "?" if eta_min == float("inf") else f"{eta_min:.0f}m"
+        _log(
+            f"season {season}: {done}/{total} games | {rate:.1f}/s | ETA {eta_s} | "
+            f"win[ok={delta['ok']} blank={delta['blank']} 404={delta['notfound']} "
+            f"blocked={delta['blocked']} timeout/err={delta['transport_err']}] | "
+            f"proxies {snap['healthy']}ok/{snap['degraded']}deg/{snap['quar']}quar of {pool_size}"
+        )
+        # Degradation WARN — driven by proxy-fault signals (timeouts + blocks +
+        # quarantines), NOT 404s (those are expected-absent old-season endpoints).
+        win_total = sum(delta.values())
+        win_fault = delta["transport_err"] + delta["blocked"]
+        if snap["quar"] >= max(3, pool_size // 5) or (win_total > 50 and win_fault / win_total > 0.35):
+            worst = ", ".join(f"{k}:{n}" for k, n in snap["worst"]) or "n/a"
+            _log(
+                f"WARN: proxy pool degrading — {snap['quar']}/{pool_size} quarantined, "
+                f"{win_fault}/{win_total} recent faults; worst: {worst}"
+            )
+
+
 def _parse_seasons(spec: str) -> list[int]:
     if ":" in spec:
         lo, hi = spec.split(":", 1)
@@ -106,6 +170,15 @@ def main(argv: list[str]) -> int:
     from season_capture import capture_season, game_ids_from_gamelog, payload_path
     from sportsdataverse.nba.nba_possessions import _raw_store_path, _through_raw_store
 
+    # The real curl_cffi transport lives in the shared stats runtime; wrap it so
+    # every fetch's (proxy, status, latency, error) feeds ProxyHealth. League-
+    # agnostic: prefer the league's runtime module, fall back to the NBA one.
+    try:
+        _rt = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}_runtime")
+        _curl_transport = _rt._curl_transport
+    except (ImportError, AttributeError):
+        pass
+
     stats = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}")
     game_endpoints, _season_endpoints = discover(stats, STATS_PREFIX)
     seasons = _parse_seasons(argv[0])
@@ -130,15 +203,28 @@ def main(argv: list[str]) -> int:
         _log("--check: sweep sized and proxy pool verified; fetching nothing")
         return 0
 
-    rr = RoundRobin(pool)
+    health = ProxyHealth(quarantine_fails=int(os.environ.get("PROXY_QUARANTINE_FAILS", "5")))
+    rr = RoundRobin(pool, health=health)
+
+    def _instrumented(url: str, params: dict, headers: dict, proxy_url) -> tuple:
+        """Wrap the real curl_cffi transport to record per-fetch health, then
+        return ``(status, text)`` unchanged so the store/parse path is identical."""
+        t0 = time.monotonic()
+        try:
+            status, text = _curl_transport(url, params, headers, proxy_url)
+        except Exception:
+            health.record(proxy_url, "transport_err", (time.monotonic() - t0) * 1000)
+            raise  # preserve the "timeout propagates" contract for the miss count
+        health.record(proxy_url, classify(status, text, None), (time.monotonic() - t0) * 1000)
+        return status, text
 
     def _season_fetch(endpoint: str, kwargs: dict) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(return_parsed=False, proxy_url=rr.next(), **kwargs)
+        return fn(return_parsed=False, proxy_url=rr.next(), transport=_instrumented, **kwargs)
 
     def _game_fetch(endpoint: str, gid: str) -> object:
         fn = getattr(stats, f"{STATS_PREFIX}_{endpoint}")
-        return fn(game_id=gid, return_parsed=False, proxy_url=rr.next())
+        return fn(game_id=gid, return_parsed=False, proxy_url=rr.next(), transport=_instrumented)
 
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
@@ -189,9 +275,7 @@ def main(argv: list[str]) -> int:
                 out: dict[str, object] = {}
                 for period in range(1, n + 1):
                     start_range, end_range = period_start_range(period, season)
-                    out[str(period)] = getattr(
-                        stats, f"{STATS_PREFIX}_boxscoretraditionalv3"
-                    )(
+                    out[str(period)] = getattr(stats, f"{STATS_PREFIX}_boxscoretraditionalv3")(
                         game_id=g,
                         start_period=period,
                         end_period=period,
@@ -200,17 +284,27 @@ def main(argv: list[str]) -> int:
                         end_range=end_range,
                         return_parsed=False,
                         proxy_url=rr.next(),
+                        transport=_instrumented,
                     )
                 return out
 
             try:
-                _through_raw_store(
-                    PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False
-                )
+                _through_raw_store(PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False)
                 fetched += 1
             except Exception:  # noqa: BLE001 - a period gap must not kill the game
                 failed += 1
         return fetched, failed
+
+    # Steady heartbeat + IP-health line every HEARTBEAT_SECS during the (otherwise
+    # silent) per-game pass; a daemon thread so it can't block shutdown.
+    progress = Progress()
+    stop_hb = threading.Event()
+    hb = threading.Thread(
+        target=_heartbeat,
+        args=(progress, health, stop_hb, float(os.environ.get("HEARTBEAT_SECS", "60")), len(pool)),
+        daemon=True,
+    )
+    hb.start()
 
     grand_fetched = grand_failed = 0
     for season in seasons:
@@ -219,10 +313,7 @@ def main(argv: list[str]) -> int:
         s_written, s_skipped, s_failed = capture_season(
             season, store, _season_fetch, stats, STATS_PREFIX, LEAGUE_ID, _log
         )
-        _log(
-            f"season {season}: season-level | {s_written} written"
-            f" | {s_skipped} present | {s_failed} failed"
-        )
+        _log(f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed")
 
         gids: set[str] = set()
         for stype in SEASON_TYPES:
@@ -234,11 +325,7 @@ def main(argv: list[str]) -> int:
             ):
                 if candidate.exists():
                     try:
-                        gids.update(
-                            game_ids_from_gamelog(
-                                json.loads(candidate.read_text(encoding="utf-8"))
-                            )
-                        )
+                        gids.update(game_ids_from_gamelog(json.loads(candidate.read_text(encoding="utf-8"))))
                     except (OSError, json.JSONDecodeError) as exc:
                         _log(f"season {season} {stype}: game-index read failed: {exc}")
                     break
@@ -256,6 +343,7 @@ def main(argv: list[str]) -> int:
 
         todo = [g for g in sorted(gids) if _incomplete(g)]
         _log(f"season {season}: {len(gids)} games indexed, {len(todo)} incomplete")
+        progress.begin_season(season, len(todo))
         if not todo:
             continue
         fetched = failed = 0
@@ -264,10 +352,19 @@ def main(argv: list[str]) -> int:
                 f, x = fut.result()
                 fetched += f
                 failed += x
+                progress.tick()
         grand_fetched += fetched
         grand_failed += failed
-        _log(f"season {season}: done | {fetched} payloads fetched | {failed} misses")
+        snap = health.snapshot()
+        c = snap["cat"]
+        _log(
+            f"season {season}: done | {fetched} payloads fetched | {failed} misses"
+            f" | http[ok={c['ok']} blank={c['blank']} 404={c['notfound']}"
+            f" blocked={c['blocked']} timeout/err={c['transport_err']}]"
+            f" | proxies {snap['quar']} quarantined of {len(pool)}"
+        )
 
+    stop_hb.set()
     _log(
         f"sweep complete: {grand_fetched} payloads persisted, {grand_failed} misses"
         " (endpoint gaps are expected in early seasons)"

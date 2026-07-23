@@ -11,9 +11,106 @@ from __future__ import annotations
 import json
 import os
 import random
+import threading
 import urllib.error
 import urllib.request
 from typing import Any, Optional
+
+
+def classify(status: Optional[int], text: str, error: Optional[str]) -> str:
+    """Bucket a fetch outcome for health/observability.
+
+    - ``transport_err``: the request raised (timeout / connection / proxy dead).
+    - ``blocked``: HTTP 403 / 429 / 5xx — the site pushed back (throttle / IP block).
+    - ``notfound``: HTTP 400 / 404 — endpoint genuinely absent (expected for old
+      seasons; benign, NOT a proxy-health signal).
+    - ``blank``: HTTP 200 with an empty body (mild throttle signal).
+    - ``ok``: HTTP 200 with a body.
+
+    ``transport_err`` and ``blocked`` are the quarantine-worthy signals (the proxy
+    or the IP is the problem); ``notfound`` never counts against a proxy.
+    """
+    if error is not None:
+        return "transport_err"
+    if status == 200:
+        return "ok" if (text or "").strip() else "blank"
+    if status in (400, 404):
+        return "notfound"
+    return "blocked"
+
+
+_QUARANTINE_CATS = ("transport_err", "blocked", "blank")
+
+
+class ProxyHealth:
+    """Thread-safe per-proxy + global fetch-outcome registry.
+
+    Drives three things: per-proxy quarantine (consecutive bad outcomes), the
+    heartbeat's health summary, and the degradation WARN. Keyed by the redacted
+    ``host:port`` so credentials never enter the counters or a log line.
+    """
+
+    def __init__(self, quarantine_fails: int = 5):
+        self._lock = threading.Lock()
+        self._per: dict[str, dict[str, Any]] = {}
+        self.quarantine_fails = quarantine_fails
+        self.cat: dict[str, int] = {k: 0 for k in ("ok", "blank", "notfound", "blocked", "transport_err")}
+
+    def record(self, proxy_url: Optional[str], category: str, latency_ms: float = 0.0) -> None:
+        key = redact(proxy_url) if proxy_url else "direct"
+        with self._lock:
+            self.cat[category] = self.cat.get(category, 0) + 1
+            d = self._per.setdefault(
+                key,
+                {
+                    "req": 0,
+                    "consec_err": 0,
+                    "lat_ms": 0.0,
+                    "ok": 0,
+                    "blank": 0,
+                    "notfound": 0,
+                    "blocked": 0,
+                    "transport_err": 0,
+                },
+            )
+            d["req"] += 1
+            d[category] = d.get(category, 0) + 1
+            d["lat_ms"] = latency_ms
+            d["consec_err"] = d["consec_err"] + 1 if category in _QUARANTINE_CATS else 0
+
+    def is_quarantined(self, proxy_url: Optional[str]) -> bool:
+        key = redact(proxy_url) if proxy_url else "direct"
+        with self._lock:
+            d = self._per.get(key)
+            return bool(d and d["consec_err"] >= self.quarantine_fails)
+
+    def reset_quarantine(self) -> None:
+        with self._lock:
+            for d in self._per.values():
+                d["consec_err"] = 0
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            healthy = degraded = quar = 0
+            worst = []
+            for k, d in self._per.items():
+                if d["consec_err"] >= self.quarantine_fails:
+                    quar += 1
+                    worst.append((k, d["consec_err"]))
+                elif d["consec_err"] >= 2:
+                    degraded += 1
+                    worst.append((k, d["consec_err"]))
+                else:
+                    healthy += 1
+            worst.sort(key=lambda x: -x[1])
+            return {
+                "cat": dict(self.cat),
+                "healthy": healthy,
+                "degraded": degraded,
+                "quar": quar,
+                "used": len(self._per),
+                "worst": worst[:3],
+            }
 
 
 def load_proxies() -> list[dict[str, Any]]:
@@ -74,23 +171,40 @@ class RoundRobin:
             ``password``), e.g. from :func:`load_proxies`.
     """
 
-    def __init__(self, proxies: list[dict[str, Any]]):
+    def __init__(self, proxies: list[dict[str, Any]], health: "Optional[ProxyHealth]" = None):
         self._proxies = list(proxies)
         self._order = list(range(len(self._proxies)))
         random.shuffle(self._order)
         self._pos = 0
+        self._health = health
+        self._lock = threading.Lock()  # 14 workers call next() concurrently
+
+    def _url_at(self, idx: int) -> str:
+        p = self._proxies[self._order[idx % len(self._order)]]
+        return f"http://{p['login']}:{p['password']}@{p['ip']}:{p['port']}"
 
     def next(self) -> Optional[str]:
-        """Return the next proxy URL in rotation, or ``None`` if the pool is empty.
+        """Return the next non-quarantined proxy URL, or ``None`` if the pool is empty.
 
-        Returns:
-            A ``http://{login}:{password}@{ip}:{port}`` URL, or ``None``.
+        Skips proxies the health tracker has quarantined (too many consecutive
+        timeouts / blocks). If every proxy is quarantined, clears the quarantine
+        and hands one back anyway rather than stalling the sweep.
         """
         if not self._proxies:
             return None
-        p = self._proxies[self._order[self._pos % len(self._order)]]
-        self._pos += 1
-        return f"http://{p['login']}:{p['password']}@{p['ip']}:{p['port']}"
+        with self._lock:
+            n = len(self._order)
+            for _ in range(n):
+                url = self._url_at(self._pos)
+                self._pos += 1
+                if self._health is None or not self._health.is_quarantined(url):
+                    return url
+            # whole pool quarantined — reset and fall back so work never stalls
+            if self._health is not None:
+                self._health.reset_quarantine()
+            url = self._url_at(self._pos)
+            self._pos += 1
+            return url
 
 
 def redact(url: str) -> str:
