@@ -43,7 +43,7 @@ fi
 
 export PYTHONUNBUFFERED=1      # real-time log lines, no buffering lag
 export PYTHONIOENCODING=utf-8  # cp1252 chokes on unicode in piped output
-export SCRAPE_WORKERS="${SCRAPE_WORKERS:-10}"  # pace knob; lower if the pool gets throttled
+export SCRAPE_WORKERS="${SCRAPE_WORKERS:-14}"  # pace knob; lower if the pool gets throttled
 
 mkdir -p logs
 LOG="logs/nba_stats_raw_backfill_$(date +%Y%m%d_%H%M%S).log"
