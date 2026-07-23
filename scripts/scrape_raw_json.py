@@ -14,10 +14,11 @@ Each season is swept in three passes:
    signatures, so new upstream endpoints are captured without an edit here.
 2. **Per-game** payloads for every game-keyed endpoint, through sdv-py's
    read-through store: ``{endpoint}/{season}/{game_id}.json`` (atomic tmp+rename).
-3. **Per-period** boxscores (``boxscoretraditionalv3_period``, one file per
-   game-period) — the quarter-box lineup grounding. Period counts are read off the
-   play-by-play captured in pass 2, so overtime costs no extra request, and the
-   request window uses :mod:`period_capture`'s era-aware WNBA time math.
+3. **Per-period** boxscores (``boxscoretraditionalv3_period``) — the quarter-box
+   lineup grounding. One payload per *game*, keyed by period, matching what the
+   ``-data`` repos consume. Period counts are read off the play-by-play captured in
+   pass 2, so overtime costs no extra request, and the request window uses
+   :mod:`period_capture`'s NBA time math (delegated to sdv-py).
 
 Game discovery reads the ``leaguegamelog`` payload pass 1 just persisted rather
 than making its own call, so the index is fetched once per season/type.
@@ -165,35 +166,46 @@ def main(argv: list[str]) -> int:
             except Exception:  # noqa: BLE001 - a game-local failure must not kill the sweep
                 failed += 1
 
-        # Per-period boxscores. The period count comes from the play-by-play above,
-        # so overtime is discovered without a request and a fixed count cannot
-        # truncate an OT game.
-        for period in range(1, periods_in_game(pbp_payload) + 1):
-            ppath = _raw_store_path(
-                PERIOD_ENDPOINT, gid, root=store, suffix=f"_p{period}"
-            )
-            if ppath is not None and ppath.exists():
-                continue
-            start_range, end_range = period_start_range(period, season_of(gid))
-            try:
-                _through_raw_store(
-                    PERIOD_ENDPOINT,
-                    gid,
-                    lambda p=period, s=start_range, e=end_range, g=gid: getattr(
+        # Per-period boxscores, written as ONE payload per game keyed by period --
+        # the shape the -data repos already consume. A file per period would mean
+        # 4-6x the objects for no gain, and every reader would have to reassemble
+        # them before use.
+        #
+        # The period count comes from the play-by-play above, so overtime is
+        # discovered without a request and a fixed count cannot truncate an OT game.
+        n_periods = periods_in_game(pbp_payload)
+        ppath = _raw_store_path(PERIOD_ENDPOINT, gid, root=store)
+        if n_periods and (ppath is None or not ppath.exists()):
+
+            def _all_periods(g: str = gid, n: int = n_periods) -> dict:
+                """Fetch every period for one game into a {period: payload} mapping.
+
+                Written through the store as a single object, so a partially-fetched
+                game leaves nothing behind: any period failing aborts the whole game
+                rather than persisting a half-captured mapping that later looks
+                complete.
+                """
+                season = season_of(g)
+                out: dict[str, object] = {}
+                for period in range(1, n + 1):
+                    start_range, end_range = period_start_range(period, season)
+                    out[str(period)] = getattr(
                         stats, f"{STATS_PREFIX}_boxscoretraditionalv3"
                     )(
                         game_id=g,
-                        start_period=p,
-                        end_period=p,
+                        start_period=period,
+                        end_period=period,
                         range_type=QUARTER_BOX_RANGE_TYPE,
-                        start_range=s,
-                        end_range=e,
+                        start_range=start_range,
+                        end_range=end_range,
                         return_parsed=False,
                         proxy_url=rr.next(),
-                    ),
-                    suffix=f"_p{period}",
-                    store_dir=store,
-                    readonly=False,
+                    )
+                return out
+
+            try:
+                _through_raw_store(
+                    PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False
                 )
                 fetched += 1
             except Exception:  # noqa: BLE001 - a period gap must not kill the game
@@ -239,8 +251,8 @@ def main(argv: list[str]) -> int:
                 p = _raw_store_path(ep, g, root=store)
                 if p is not None and not p.exists():
                     return True
-            p1 = _raw_store_path(PERIOD_ENDPOINT, g, root=store, suffix="_p1")
-            return p1 is not None and not p1.exists()
+            periods = _raw_store_path(PERIOD_ENDPOINT, g, root=store)
+            return periods is not None and not periods.exists()
 
         todo = [g for g in sorted(gids) if _incomplete(g)]
         _log(f"season {season}: {len(gids)} games indexed, {len(todo)} incomplete")
