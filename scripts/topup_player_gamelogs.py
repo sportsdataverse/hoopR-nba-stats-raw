@@ -79,9 +79,12 @@ def main(argv: list[str]) -> int:
                 continue
             try:
                 payload = nba_stats_leaguegamelog(
-                    season=year_to_season(
-                        season - 1
-                    ),  # store END year -> API START-year label
+                    # The store's SEASON-LEVEL half is keyed by START year (dir
+                    # 2023 holds 2023-24) -- unlike the per-game half, which is
+                    # keyed by END year. Match the sibling team capture that
+                    # already lives in this directory, or the two are a season
+                    # apart and every downstream join silently finds nothing.
+                    season=year_to_season(season),
                     season_type_all_star=stype,
                     player_or_team_abbreviation="P",
                     league_id=LEAGUE_ID,
