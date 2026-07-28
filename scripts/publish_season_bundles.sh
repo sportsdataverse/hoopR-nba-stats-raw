@@ -20,7 +20,7 @@
 set -uo pipefail
 
 SEASONS="${1:-1996:2026}"
-TAG="${BUNDLE_TAG:-raw-json}"
+TAG="${BUNDLE_TAG:-nba-stats-raw-json}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STORE="$REPO_DIR/nba_stats/json"
 OUT_DIR="${BUNDLE_OUT_DIR:-$REPO_DIR/.bundles}"
