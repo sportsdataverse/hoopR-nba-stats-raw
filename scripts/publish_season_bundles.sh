@@ -33,6 +33,13 @@ command -v gh >/dev/null || { echo "FATAL: gh CLI not found" >&2; exit 3; }
 lo="${SEASONS%%:*}"; hi="${SEASONS##*:}"
 mkdir -p "$OUT_DIR"
 
+# GNU tar reads `host:path` in -f as a REMOTE archive, so a Windows drive-letter
+# BUNDLE_OUT_DIR ("C:/...") would be parsed as host "C" and silently produce a
+# broken bundle. --force-local disables that parsing; bsdtar (macOS) has neither
+# the syntax nor the flag, so probe before using it.
+TAR_LOCAL=""
+if tar --force-local --version >/dev/null 2>&1; then TAR_LOCAL="--force-local"; fi
+
 # One release holds every season's asset; create it once, idempotently.
 if [ "$DRY_RUN" != "1" ] && ! gh release view "$TAG" >/dev/null 2>&1; then
   gh release create "$TAG" \
@@ -58,7 +65,7 @@ for season in $(seq "$lo" "$hi"); do
   fi
   bundle="$OUT_DIR/nba_stats_json_${season}.tar.gz"
   # -C $STORE keeps archive paths store-relative so extraction is layout-exact.
-  if ! tar -czf "$bundle" -C "$STORE" "${paths[@]}"; then
+  if ! tar $TAR_LOCAL -czf "$bundle" -C "$STORE" "${paths[@]}"; then
     echo "season $season: tar FAILED" >&2; continue
   fi
   size=$(du -h "$bundle" | cut -f1)
