@@ -2,7 +2,7 @@
 #
 # supervise_sweep.sh
 #
-# Keep scripts/scrape_raw_json.py alive: relaunch on abnormal death, stop
+# Keep python/scrape_raw_json.py alive: relaunch on abnormal death, stop
 # cleanly once it prints "sweep complete", give up after MAX_RESTARTS so a
 # real crash loop surfaces instead of spinning forever. The sweep is
 # idempotent (on-disk payloads are skipped) so each restart resumes.
@@ -15,9 +15,12 @@
 set -u
 
 # PY: the venv carrying sportsdataverse (the raw store) + curl_cffi. Defaults
-# to this repo's compile sibling; override with SWEEP_PY for other pairs.
+# to this repo's own .venv; SWEEP_PY still overrides for other pairs.
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PY="${SWEEP_PY:-/mnt/sdv_repos/hoopR-nba-stats-data/python/.venv/bin/python}"
+NBA_VENV_PYTHON="${SWEEP_PY:-${NBA_VENV_PYTHON:-}}"
+# shellcheck source=scripts/_venv.sh
+. "$REPO/scripts/_venv.sh"
+PY="$SDV_PY"
 SEASONS="${1:-1996:2025}"
 MAX_RESTARTS="${MAX_RESTARTS:-6}"
 WD="$REPO/logs/watchdog_$(date -u +%Y%m%d_%H%M%S).log"
@@ -31,7 +34,7 @@ while :; do
   log "launch #$((n + 1)) -> $RUN"
   ( cd "$REPO" && . "$HOME/.config/sdv/env" 2>/dev/null; \
     PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 SCRAPE_WORKERS="${SCRAPE_WORKERS:-6}" \
-      "$PY" scripts/scrape_raw_json.py "$SEASONS" >> "$RUN" 2>&1 )
+      "$PY" python/scrape_raw_json.py "$SEASONS" >> "$RUN" 2>&1 )
   rc=$?
   if grep -q 'sweep complete' "$RUN"; then
     log "SWEEP COMPLETE (rc=$rc) — supervisor exiting"

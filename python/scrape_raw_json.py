@@ -64,6 +64,8 @@ STORE_SUBDIR = ("nba_stats", "json")
 
 REPO = Path(__file__).resolve().parent.parent
 SEASON_TYPES = ("Regular Season", "Playoffs")
+
+
 WORKERS = int(os.environ.get("SCRAPE_WORKERS", "6"))
 PERIOD_ENDPOINT = "boxscoretraditionalv3_period"
 # Per-endpoint season floor (start-year): below it the endpoint has no data and
@@ -107,6 +109,19 @@ ENDPOINT_MIN_SEASON = {
 }
 
 
+def _skip_endpoint(endpoint: str, season: int) -> bool:
+    """True when `endpoint` has no data for `season`, so the call is skipped.
+
+    Single owner of the floor comparison. Both call sites -- the per-game
+    `_endpoints_for` and the season-level `skip_season_eps` -- previously
+    inlined it, in INVERTED forms (`yr >= floor` to keep vs `season < mn` to
+    skip). Two hand-maintained copies of one boundary is how the shot-locations
+    over-skip (4ec4c143a4) happened. An endpoint absent from the table has no
+    floor and is never skipped.
+    """
+    return season < ENDPOINT_MIN_SEASON.get(endpoint, 0)
+
+
 def _log(msg: str) -> None:
     print(f"[{datetime.now(timezone.utc).strftime('%F %T')}Z] {msg}", flush=True)
 
@@ -139,7 +154,9 @@ class Progress:
             return self.season, self.games_done, self.games_total, self.season_start
 
 
-def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int) -> None:
+def _heartbeat(
+    progress: Progress, health, stop_evt: threading.Event, secs: float, pool_size: int
+) -> None:
     """Emit a steady progress + IP-health line every ``secs`` and WARN when the
     proxy pool degrades. Windowed on the delta since the last beat so the
     error-rate reflects the recent window, not the cumulative run."""
@@ -168,7 +185,9 @@ def _heartbeat(progress: Progress, health, stop_evt: threading.Event, secs: floa
         # quarantines), NOT 404s (those are expected-absent old-season endpoints).
         win_total = sum(delta.values())
         win_fault = delta["transport_err"] + delta["blocked"]
-        if snap["quar"] >= max(3, pool_size // 5) or (win_total > 50 and win_fault / win_total > 0.35):
+        if snap["quar"] >= max(3, pool_size // 5) or (
+            win_total > 50 and win_fault / win_total > 0.35
+        ):
             worst = ", ".join(f"{k}:{n}" for k, n in snap["worst"]) or "n/a"
             _log(
                 f"WARN: proxy pool degrading — {snap['quar']}/{pool_size} quarantined, "
@@ -261,7 +280,7 @@ def main(argv: list[str]) -> int:
         """Per-game endpoint list, dropping any endpoint below its tracking-era
         floor for this game's season (e.g. gamerotation only 500s pre-2016)."""
         yr = season_of(gid)
-        return [e for e in game_endpoints if yr >= ENDPOINT_MIN_SEASON.get(e, 0)]
+        return [e for e in game_endpoints if not _skip_endpoint(e, yr)]
 
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
@@ -325,7 +344,9 @@ def main(argv: list[str]) -> int:
                 return out
 
             try:
-                _through_raw_store(PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False)
+                _through_raw_store(
+                    PERIOD_ENDPOINT, gid, _all_periods, store_dir=store, readonly=False
+                )
                 fetched += 1
             except Exception:  # noqa: BLE001 - a period gap must not kill the game
                 failed += 1
@@ -352,7 +373,7 @@ def main(argv: list[str]) -> int:
     for season in seasons:
         # Season-level first: cheap, and it persists leaguegamelog, which the
         # per-game pass then reads for its index instead of re-fetching it.
-        skip_season_eps = {e for e, mn in ENDPOINT_MIN_SEASON.items() if season < mn}
+        skip_season_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, season)}
         s_written, s_skipped, s_failed = capture_season(
             season,
             store,
@@ -363,7 +384,9 @@ def main(argv: list[str]) -> int:
             _log,
             skip_endpoints=skip_season_eps,
         )
-        _log(f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed")
+        _log(
+            f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed"
+        )
 
         gids: set[str] = set()
         for stype in SEASON_TYPES:
@@ -375,7 +398,9 @@ def main(argv: list[str]) -> int:
             ):
                 if candidate.exists():
                     try:
-                        gids.update(game_ids_from_gamelog(json.loads(candidate.read_text(encoding="utf-8"))))
+                        gids.update(
+                            game_ids_from_gamelog(json.loads(candidate.read_text(encoding="utf-8")))
+                        )
                     except (OSError, json.JSONDecodeError) as exc:
                         _log(f"season {season} {stype}: game-index read failed: {exc}")
                     break
