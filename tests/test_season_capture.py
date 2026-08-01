@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from endpoints import (
     LEAGUE_WNBA,
+    MEASURE_TYPE_DOMAINS,
     MEASURE_TYPES,
     PER_MODES,
     SEASON_TYPES,
@@ -69,6 +70,26 @@ class StubStats:
     def stub_commonteamroster(season=None, team_id=None, league_id=None, return_parsed=True): ...
 
     @staticmethod
+    def stub_playergamelogs(
+        season_nullable=None,
+        season_type_nullable=None,
+        measure_type_player_game_logs_nullable=None,
+        per_mode_simple_nullable=None,
+        league_id=None,
+        return_parsed=True,
+    ): ...
+
+    @staticmethod
+    def stub_leaguedashteamshotlocations(
+        season=None,
+        season_type_all_star=None,
+        measure_type_simple=None,
+        per_mode_detailed=None,
+        league_id=None,
+        return_parsed=True,
+    ): ...
+
+    @staticmethod
     def stub_playbyplayv3(game_id=None, return_parsed=True, proxy_url=None): ...
 
     @staticmethod
@@ -103,11 +124,50 @@ def test_discover_splits_game_from_season_and_drops_team_player() -> None:
 
 
 def test_matrix_is_derived_from_the_signature() -> None:
+    """The matrix is the product of each axis's OWN domain, not of MEASURE_TYPES.
+
+    The stub takes `measure_type_detailed_defense`, which does not accept Usage,
+    so the product is 7 measure types rather than all 8.
+    """
     v = list(season_variants(StubStats.stub_leaguedashteamstats, 2025, LEAGUE_WNBA))
-    assert len(v) == len(SEASON_TYPES) * len(MEASURE_TYPES) * len(PER_MODES)
+    domain = MEASURE_TYPE_DOMAINS["measure_type_detailed_defense"]
+    assert len(v) == len(SEASON_TYPES) * len(domain) * len(PER_MODES)
     slugs = [s for s, _k in v]
     assert len(set(slugs)) == len(slugs), "variant slugs must be unique"
     assert "regular-season_base_totals" in slugs
+    assert "regular-season_four-factors_totals" in slugs, "Four Factors must be captured"
+
+
+def test_measure_types_are_narrowed_to_the_parameter_domain() -> None:
+    """Sweeping every MEASURE_TYPES value over every measure_type* parameter is
+    what produced most of this archive's empty payloads: the endpoint accepts
+    the parameter but the API cannot answer the value, and the unparseable body
+    was persisted as `{}` and never retried."""
+    for fn, param in (
+        (StubStats.stub_leaguedashteamstats, "measure_type_detailed_defense"),
+        (StubStats.stub_leaguedashteamshotlocations, "measure_type_simple"),
+    ):
+        got = {k[param] for _s, k in season_variants(fn, 2025, LEAGUE_WNBA)}
+        assert got == set(MEASURE_TYPE_DOMAINS[param])
+
+    # measure_type_simple accepts only these two -- the other six were 5/7 of
+    # every shot-locations capture (71.4% empty, identical in NBA and WNBA).
+    assert set(MEASURE_TYPE_DOMAINS["measure_type_simple"]) == {"Base", "Opponent"}
+    assert "Usage" not in MEASURE_TYPE_DOMAINS["measure_type_detailed_defense"]
+
+
+def test_four_factors_is_in_the_full_measure_type_list() -> None:
+    """It was missing entirely, so no endpoint ever captured it."""
+    assert "Four Factors" in MEASURE_TYPES
+
+
+def test_season_is_pinned_even_when_spelled_nullable() -> None:
+    """playergamelogs / teamgamelogs spell it `season_nullable`. The pin used to
+    test the bare `season` only, so those endpoints were called with NO season
+    filter and 100% of their captures came back empty in both leagues."""
+    for _v, kwargs in season_variants(StubStats.stub_playergamelogs, 2025, LEAGUE_WNBA):
+        assert kwargs.get("season_nullable") == "2025"
+        assert "season" not in kwargs, "must not send a parameter the endpoint lacks"
 
 
 def test_endpoint_without_axes_gets_one_unparameterized_capture() -> None:
@@ -245,3 +305,77 @@ def test_real_variant_slugs_never_collide(league: str) -> None:
     for endpoint, variant, _k in plan_season(2025, mod, pre, lid):
         assert (endpoint, variant) not in seen, f"{endpoint}/{variant}"
         seen.add((endpoint, variant))
+
+
+# ---------------------------------------------------------------------------
+# The empty-payload guard.
+#
+# hoopR-nba-stats-raw accumulated 3,347 files that are exactly `{}` and
+# wehoop-wnba-stats-raw another 3,872, ten endpoints being 100% empty. They are
+# permanent: write_payload had no guard, and resume is `path.exists()` --
+# presence, not content -- so one empty write is never retried.
+#
+# A live probe confirmed several are real data when refetched
+# (leaguedashptteamdefend 30 rows, matchupsrollup 2,283, shot-locations
+# MeasureType=Advanced 30), i.e. those `{}` files were failed fetches that got
+# persisted as if they were answers.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("payload", [{}, [], None, "", 0, "not-json"])
+def test_contentless_payloads_are_refused(payload, tmp_path: Path) -> None:
+    path = tmp_path / "e" / "2024" / "v.json"
+    assert write_payload(path, payload) is False
+    assert not path.exists(), "a contentless payload must leave NO file behind"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # An envelope with zero rows is a REAL answer -- 1996 playoff leaders
+        # legitimately have none. The guard must not eat these.
+        {"resource": "leagueleaders", "parameters": {}, "resultSet": {"rowSet": []}},
+        {"resource": "x", "parameters": {}, "resultSets": []},
+        # v3 with an empty action list: playbyplayv3 pre-1997 really is like this.
+        {"meta": {"version": 1}, "game": {"actions": []}},
+    ],
+)
+def test_empty_but_real_answers_are_persisted(payload, tmp_path: Path) -> None:
+    path = tmp_path / "e" / "2024" / "v.json"
+    assert write_payload(path, payload) is True
+    assert json.loads(path.read_text(encoding="utf-8")) == payload
+
+
+def test_capture_counts_an_empty_payload_as_failed_not_written(tmp_path: Path) -> None:
+    """The season summary must not report a refused write as a capture."""
+
+    def fetch(endpoint, kwargs):
+        return {}
+
+    written, _skipped, failed = capture_season(
+        2025, tmp_path, fetch, StubStats, "stub", LEAGUE_WNBA
+    )
+    assert written == 0
+    assert failed > 0
+    assert not list(tmp_path.rglob("*.json")), "no file may be left for a retry to skip"
+
+
+def test_a_refused_write_is_retried_on_the_next_sweep(tmp_path: Path) -> None:
+    """The whole point of the guard: the gap must not become permanent."""
+    calls = {"n": 0}
+
+    def flaky(endpoint, kwargs):
+        calls["n"] += 1
+        # First sweep: everything comes back empty. Second: real payloads.
+        if calls["n"] <= 1000 and not flaky.recovered:
+            return {}
+        return {"resource": endpoint, "parameters": dict(kwargs), "resultSets": [{"rowSet": [[1]]}]}
+
+    flaky.recovered = False
+    w1, _s1, f1 = capture_season(2025, tmp_path, flaky, StubStats, "stub", LEAGUE_WNBA)
+    assert w1 == 0 and f1 > 0
+
+    flaky.recovered = True
+    w2, s2, _f2 = capture_season(2025, tmp_path, flaky, StubStats, "stub", LEAGUE_WNBA)
+    assert w2 > 0, "the second sweep must refetch what the first refused to persist"
+    assert s2 == 0, "nothing should have been skipped-as-present"

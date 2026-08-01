@@ -50,11 +50,11 @@ __pycache__/
 .omc/
 
 # --- SDV repo template ---------------------------------------------------
-# Top-level run artifacts only; logs/*.log stays tracked (the scrapers commit
-# one per season and overwrite it each run).
+# Top-level run artifacts. logs/ is already ignored wholesale above, so a
+# `!logs/*.log` negation here would be dead -- git does not re-include files
+# inside an ignored directory.
 /*.out
 /*.log
-!logs/*.log
 
 # Editable-install metadata produced by `uv sync` against the root pyproject.
 *.egg-info/

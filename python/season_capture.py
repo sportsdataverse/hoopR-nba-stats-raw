@@ -40,18 +40,41 @@ __all__ = [
 ]
 
 
-def payload_path(
-    root: str | Path, endpoint: str, season: int, variant: str | None = None
-) -> Path:
+def payload_path(root: str | Path, endpoint: str, season: int, variant: str | None = None) -> Path:
     """Where a season-level capture lives. ``variant=None`` means unparameterized."""
     base = Path(root) / endpoint
-    return (
-        base / str(season) / f"{variant}.json" if variant else base / f"{season}.json"
-    )
+    return base / str(season) / f"{variant}.json" if variant else base / f"{season}.json"
 
 
-def write_payload(path: Path, payload: Any) -> None:
-    """Persist ``payload`` atomically, so a killed sweep never leaves half a file."""
+def is_contentless(payload: Any) -> bool:
+    """True when ``payload`` carries nothing and must not be persisted.
+
+    stats.nba.com never answers with an empty body: an endpoint with no rows
+    still returns the full envelope with ``rowSet: []`` (see
+    leagueleaders/1996/playoffs_pergame.json). A bare ``{}`` therefore means the
+    getter could not parse a response -- a failed fetch, not "no data".
+
+    That distinction is load-bearing because resume is ``path.exists()``, i.e.
+    presence rather than content. One empty write is permanent: every later
+    sweep counts the file present, never refetches, and reports the season
+    complete, so a backfill no-ops. 3,347 files in hoopR-nba-stats-raw and
+    3,872 in wehoop-wnba-stats-raw reached that state before this guard.
+
+    Deliberately narrow -- ``{"resultSets": []}`` and a v3 payload whose entity
+    list is empty are REAL answers and are persisted.
+    """
+    return payload is None or not isinstance(payload, (dict, list)) or len(payload) == 0
+
+
+def write_payload(path: Path, payload: Any) -> bool:
+    """Persist ``payload`` atomically. Returns False (writing nothing) if it is
+    contentless.
+
+    Atomic so a killed sweep never leaves half a file; guarded so a failed fetch
+    never becomes a permanent gap.
+    """
+    if is_contentless(payload):
+        return False
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.partial")
     try:
@@ -60,6 +83,7 @@ def write_payload(path: Path, payload: Any) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    return True
 
 
 def _ids_from(payload: Any, column: str) -> list[str]:
@@ -161,7 +185,12 @@ def capture_season(
             log(f"season {season} {endpoint}[{variant}]: {exc}")
             failed += 1
             continue
-        write_payload(path, payload)
+        if not write_payload(path, payload):
+            # Counted as a failure, not a write: leaving no file is what lets the
+            # next sweep retry it.
+            log(f"season {season} {endpoint}[{variant}]: empty payload, not persisted")
+            failed += 1
+            continue
         written += 1
         if is_team_source:
             team_source = payload
@@ -183,7 +212,10 @@ def capture_season(
                 log(f"season {season} commonteamroster[{team_id}]: {exc}")
                 failed += 1
                 continue
-            write_payload(path, payload)
+            if not write_payload(path, payload):
+                log(f"season {season} commonteamroster[{team_id}]: empty payload, not persisted")
+                failed += 1
+                continue
             written += 1
 
     return written, skipped, failed

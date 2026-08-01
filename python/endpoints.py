@@ -37,7 +37,63 @@ LEAGUE_NBA = "00"
 LEAGUE_WNBA = "10"
 
 SEASON_TYPES = ("Regular Season", "Playoffs")
-MEASURE_TYPES = ("Base", "Advanced", "Misc", "Scoring", "Usage", "Defense", "Opponent")
+#: Every measure type the API defines. "Four Factors" was missing from this
+#: tuple, so it was never captured for ANY endpoint -- a whole measure type
+#: absent from the archive rather than merely mis-parameterised.
+MEASURE_TYPES = (
+    "Base",
+    "Advanced",
+    "Misc",
+    "Four Factors",
+    "Scoring",
+    "Usage",
+    "Defense",
+    "Opponent",
+)
+
+#: Measure-type values each parameter actually accepts, keyed by the parameter's
+#: OWN name. Sweeping all of MEASURE_TYPES over every ``measure_type*`` parameter
+#: is what produced most of this archive's empty payloads: the endpoint accepts
+#: the parameter, but the API answers an unsupported value with a body that does
+#: not parse, and that `{}` was persisted and never retried.
+#:
+#: Measured live (2026-08-01), not taken from documentation:
+#:   measure_type_simple            Base/Opponent only -> the other 6 were 5/7
+#:                                  of every shot-locations capture (71.4% empty,
+#:                                  identical in NBA and WNBA)
+#:   measure_type_detailed_defense  everything except Usage -> 1/7 (14.3% empty,
+#:                                  again identical across both leagues)
+#: An unlisted parameter falls back to the full tuple.
+MEASURE_TYPE_DOMAINS: dict[str, tuple[str, ...]] = {
+    "measure_type_simple": ("Base", "Opponent"),
+    "measure_type_detailed_defense": (
+        "Base",
+        "Advanced",
+        "Misc",
+        "Four Factors",
+        "Scoring",
+        "Defense",
+        "Opponent",
+    ),
+    # Four Factors / Defense / Opponent answered empty here.
+    "measure_type_player_game_logs_nullable": (
+        "Base",
+        "Advanced",
+        "Misc",
+        "Scoring",
+        "Usage",
+    ),
+}
+
+#: Season / league parameters, most-specific first. Matched by EXACT name from
+#: this list rather than by prefix: prefix-matching "season" would also hit
+#: ``season_segment_nullable`` and ``season_type_*``. The previous code tested
+#: only the bare ``season``, so endpoints that spell it ``season_nullable``
+#: (playergamelogs, teamgamelogs) were called with NO season filter at all --
+#: the API answered nothing and 100% of those captures were empty in both
+#: leagues.
+_SEASON_PARAMS = ("season", "season_nullable", "season_year")
+_LEAGUE_PARAMS = ("league_id", "league_id_nullable")
 PER_MODES = ("Totals", "PerGame")
 
 #: Lineups are five-player units; the endpoint also accepts 2-4 but the published
@@ -115,29 +171,31 @@ def season_variants(
     """
     params = _params(fn)
     base: dict[str, Any] = {}
-    if "season" in params:
-        base["season"] = str(season)
-    if "league_id" in params:
-        base["league_id"] = league_id
+    season_param = next((p for p in _SEASON_PARAMS if p in params), None)
+    if season_param:
+        base[season_param] = str(season)
+    league_param = next((p for p in _LEAGUE_PARAMS if p in params), None)
+    if league_param:
+        base[league_param] = league_id
     for pin, value in _PINS:
         name = _match(params, pin)
         if name:
             base[name] = value
 
     # Expand the cartesian product of whichever sweeps this endpoint supports.
+    # Each axis is narrowed to the values its OWN parameter accepts, so the
+    # sweep stops issuing calls the API cannot answer.
     axes: list[tuple[str, tuple[str, ...]]] = []
     for prefix, values in _SWEEPS:
         name = _match(params, prefix)
         if name:
-            axes.append((name, values))
+            axes.append((name, MEASURE_TYPE_DOMAINS.get(name, values)))
 
     if not axes:
         yield None, base
         return
 
-    def walk(
-        i: int, acc: dict[str, Any], parts: list[str]
-    ) -> Iterator[tuple[str, dict[str, Any]]]:
+    def walk(i: int, acc: dict[str, Any], parts: list[str]) -> Iterator[tuple[str, dict[str, Any]]]:
         if i == len(axes):
             yield "_".join(parts), {**base, **acc}
             return
@@ -148,9 +206,7 @@ def season_variants(
     yield from walk(0, {}, [])
 
 
-def plan_counts(
-    module: Any, prefix: str, league_id: str, season: int = 2025
-) -> dict[str, int]:
+def plan_counts(module: Any, prefix: str, league_id: str, season: int = 2025) -> dict[str, int]:
     """Per-season call counts, for sizing a sweep before running one."""
     game, season_eps = discover(module, prefix)
     n_season = sum(
