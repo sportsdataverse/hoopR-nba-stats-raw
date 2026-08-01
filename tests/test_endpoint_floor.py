@@ -116,29 +116,22 @@ PARKED = (
 )
 
 
-@pytest.mark.parametrize("endpoint", PARKED)
-def test_nonfunctional_endpoints_are_parked(endpoint) -> None:
-    """These cannot be built correctly by a season-level sweep, and each variant
-    costs a FULL request timeout before the write guard refuses to persist it.
+def _floors_in_subprocess(preamble: str, endpoints: tuple[str, ...]) -> list[int]:
+    """Import the module in a clean subprocess and read the given floors.
 
-    Measured 2026-08-01 at timeout=90s / workers=6: seasons carrying these took
-    9m18s and 7m51s and wrote 0 and 2 files (~37 failures each); seasons without
-    them ran in about a second. playercompare alone is 28 variants/season.
+    ``ENDPOINT_MIN_SEASON`` is built at import time, so the environment has to be
+    arranged BEFORE the import -- monkeypatching in-process proves nothing. Every
+    parked-endpoint override is cleared first, so a shell that has one exported
+    for a fixed-parameter run cannot make these tests lie in either direction.
     """
-    assert ENDPOINT_MIN_SEASON[endpoint] > max(REAL_SEASONS)
-    for season in REAL_SEASONS:
-        assert _skip_endpoint(endpoint, season)
-
-
-def test_parking_is_overridable_for_a_fixed_parameter_pass() -> None:
-    """Parked, not deleted -- each is recoverable once its parameters are fixed."""
     src = (
         "import os, sys;"
-        " os.environ['PLAYERCOMPARE_MIN_SEASON'] = '2015';"
-        " os.environ['DRAFTCOMBINE_MIN_SEASON'] = '2000';"
+        " [os.environ.pop(k, None) for k in list(os.environ)"
+        " if k.endswith('_MIN_SEASON')];"
+        f" {preamble}"
         " sys.path.insert(0, 'python');"
         " import scrape_raw_json as s;"
-        " print(s.ENDPOINT_MIN_SEASON['playercompare'], s.ENDPOINT_MIN_SEASON['draftcombinestats'])"
+        f" print(*[s.ENDPOINT_MIN_SEASON[e] for e in {endpoints!r}])"
     )
     out = subprocess.run(
         [sys.executable, "-c", src],
@@ -147,7 +140,43 @@ def test_parking_is_overridable_for_a_fixed_parameter_pass() -> None:
         cwd=Path(__file__).resolve().parent.parent,
         check=True,
     )
-    assert out.stdout.split() == ["2015", "2000"]
+    return [int(v) for v in out.stdout.split()]
+
+
+def test_nonfunctional_endpoints_are_parked() -> None:
+    """These cannot be built correctly by a season-level sweep, and each variant
+    costs a FULL request timeout before the write guard refuses to persist it.
+
+    Measured 2026-08-01 at timeout=90s / workers=6: seasons carrying these took
+    9m18s and 7m51s and wrote 0 and 2 files (~37 failures each); seasons without
+    them ran in about a second. playercompare alone is 28 variants/season.
+    """
+    for floor in _floors_in_subprocess("", PARKED):
+        assert floor > max(REAL_SEASONS)
+
+
+@pytest.mark.parametrize("endpoint", PARKED)
+def test_parked_endpoints_are_skipped_for_every_real_season(endpoint) -> None:
+    """Behaviour against the CONFIGURED floor, so an intentional override in the
+    environment does not fail the suite (see test_gamerotation_* for the pair)."""
+    floor = ENDPOINT_MIN_SEASON[endpoint]
+    for season in REAL_SEASONS:
+        assert _skip_endpoint(endpoint, season) == (season < floor)
+
+
+@pytest.mark.parametrize("endpoint", PARKED)
+def test_each_parked_endpoint_is_independently_overridable(endpoint) -> None:
+    """One shared variable would be a trap: a single DRAFTCOMBINE_MIN_SEASON
+    un-parks all five draftcombine endpoints at once, so a fixed-parameter run
+    for one of them silently resumes hammering the other four with parameters
+    that are still wrong. Each reads its own <ENDPOINT>_MIN_SEASON.
+    """
+    var = f"{endpoint.upper()}_MIN_SEASON"
+    others = tuple(e for e in PARKED if e != endpoint)
+    floors = _floors_in_subprocess(f" os.environ[{var!r}] = '2015';", (endpoint,) + others)
+    assert floors[0] == 2015, f"{var} must set only {endpoint}"
+    for other, floor in zip(others, floors[1:]):
+        assert floor > max(REAL_SEASONS), f"{var} must not un-park {other}"
 
 
 def test_endpoints_that_do_work_are_not_parked() -> None:
@@ -176,9 +205,7 @@ def test_no_duplicate_endpoint_keys() -> None:
     for node in ast.walk(ast.parse(src)):
         if not isinstance(node, ast.Assign):
             continue
-        if not any(
-            isinstance(t, ast.Name) and t.id == "ENDPOINT_MIN_SEASON" for t in node.targets
-        ):
+        if not any(isinstance(t, ast.Name) and t.id == "ENDPOINT_MIN_SEASON" for t in node.targets):
             continue
         assert isinstance(node.value, ast.Dict)
         keys = [k.value for k in node.value.keys if isinstance(k, ast.Constant)]

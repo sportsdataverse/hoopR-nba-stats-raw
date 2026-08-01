@@ -77,6 +77,20 @@ PERIOD_ENDPOINT = "boxscoretraditionalv3_period"
 # / leaguedashplayershotlocations (basic shot-zone variants populate back to 1996);
 # leaguedashteamstats (its Base variant is the team-id source for commonteamroster).
 _PT = int(os.environ.get("PT_MIN_SEASON", "2013"))  # SportVU player tracking: 2013-14+
+
+
+def _parked(endpoint: str) -> int:
+    """Floor for a PARKED endpoint: above any real season, so it is skipped.
+
+    Read from ``<ENDPOINT>_MIN_SEASON`` so every parked endpoint is
+    independently re-enablable. A shared variable would be a trap: one
+    ``DRAFTCOMBINE_MIN_SEASON`` would un-park all five draftcombine endpoints
+    at once, so a fixed-parameter run for one of them would silently resume
+    hammering the other four with parameters that are still wrong.
+    """
+    return int(os.environ.get(f"{endpoint.upper()}_MIN_SEASON", "9999"))
+
+
 ENDPOINT_MIN_SEASON = {
     # --- game-keyed (probed floors) ---
     # gamerotation is PARKED (floor above any real season = skipped outright). It
@@ -87,7 +101,7 @@ ENDPOINT_MIN_SEASON = {
     # skips-as-present and only gamerotation is fetched:
     #   GAMEROTATION_MIN_SEASON=2016 SCRAPE_WORKERS=3 SDV_PY_NBA_STATS_TIMEOUT=60 \
     #     bash scripts/backfill_nba_stats_raw.sh 2016:2026
-    "gamerotation": int(os.environ.get("GAMEROTATION_MIN_SEASON", "9999")),
+    "gamerotation": _parked("gamerotation"),
     "boxscorematchupsv3": 2017,  # probed: empty <=2016, populates 2017-18
     "boxscoredefensivev2": 2017,  # probed: empty <=2016, populates 2017-18
     # --- PARKED: known-nonfunctional with the parameters this sweep can build.
@@ -121,12 +135,12 @@ ENDPOINT_MIN_SEASON = {
     #                   `measure_type_player_game_logs_nullable` while ACCEPTING
     #                   Usage -- so the domain cannot separate them. Needs a
     #                   per-endpoint override, not a domain edit.
-    "playercompare": int(os.environ.get("PLAYERCOMPARE_MIN_SEASON", "9999")),
-    "draftcombinestats": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
-    "draftcombinedrillresults": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
-    "draftcombineplayeranthro": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
-    "draftcombinespotshooting": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
-    "draftcombinenonstationaryshooting": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
+    "playercompare": _parked("playercompare"),
+    "draftcombinestats": _parked("draftcombinestats"),
+    "draftcombinedrillresults": _parked("draftcombinedrillresults"),
+    "draftcombineplayeranthro": _parked("draftcombineplayeranthro"),
+    "draftcombinespotshooting": _parked("draftcombinespotshooting"),
+    "draftcombinenonstationaryshooting": _parked("draftcombinenonstationaryshooting"),
     # --- season-level: player-tracking (SportVU) ---
     "leaguedashptstats": _PT,
     "leaguedashptdefend": _PT,
