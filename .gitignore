@@ -48,3 +48,34 @@ logs/
 # Tooling byproducts
 __pycache__/
 .omc/
+
+# --- SDV repo template ---------------------------------------------------
+# Top-level run artifacts. logs/ is already ignored wholesale above, so a
+# `!logs/*.log` negation here would be dead -- git does not re-include files
+# inside an ignored directory.
+/*.out
+/*.log
+
+# Editable-install metadata produced by `uv sync` against the root pyproject.
+*.egg-info/
+**/*.egg-info/
+
+# Tool scratch directories (bare and nested).
+.omc/
+**/.omc/
+.Rproj.user/
+**/.Rproj.user/
+.ruff_cache/
+**/.ruff_cache/
+.understand-anything/
+**/.understand-anything/
+.superpowers/
+**/.superpowers/
+.pytest_cache/
+**/.pytest_cache/
+.venv/
+**/.venv/
+
+# NOTE: .bundles/ is NOT ignored. The 31 nba_stats_json_YYYY.tar.gz season
+# bundles are tracked deliberately -- they are the clone-free raw-store backend
+# that lets consumers fetch a season without cloning ~490k files.

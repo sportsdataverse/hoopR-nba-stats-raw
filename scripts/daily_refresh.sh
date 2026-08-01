@@ -16,7 +16,9 @@
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PY=/mnt/sdv_repos/hoopR-nba-stats-data/python/.venv/bin/python
+# shellcheck source=scripts/_venv.sh
+. "$REPO/scripts/_venv.sh"
+PY="$SDV_PY"
 . "$HOME/.config/sdv/env" 2>/dev/null || true
 
 m=$(date -u +%m); y=$(date -u +%Y)
@@ -26,7 +28,17 @@ LOG="$REPO/logs/daily_refresh_$(date -u +%Y%m%d).log"
 {
   echo "[$(date -u '+%F %T')Z] daily refresh start: NBA season=$season"
   cd "$REPO" || exit 1
-  SCRAPE_WORKERS="${SCRAPE_WORKERS:-4}" "$PY" scripts/scrape_raw_json.py "$season"
+  SCRAPE_WORKERS="${SCRAPE_WORKERS:-4}" "$PY" python/scrape_raw_json.py "$season"
+  scrape_rc=$?
+  # The commit used to run unconditionally, so a failed sweep still published a
+  # partial season -- and the `rc=$?` below reported the COMMIT's status, which
+  # made the failure invisible in the log too.
+  if [ "$scrape_rc" -ne 0 ]; then
+    echo "[$(date -u '+%F %T')Z] scrape failed (rc=$scrape_rc); not committing"
+    exit "$scrape_rc"
+  fi
   bash scripts/commit_raw_json.sh
-  echo "[$(date -u '+%F %T')Z] daily refresh done (rc=$?)"
+  commit_rc=$?
+  echo "[$(date -u '+%F %T')Z] daily refresh done (scrape=$scrape_rc commit=$commit_rc)"
+  exit "$commit_rc"
 } >> "$LOG" 2>&1

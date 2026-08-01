@@ -2,27 +2,18 @@
 
 ## Project Context
 
-This repo is a placeholder in the SportsDataverse `hoopR` NBA Stats
-pipeline. The intended role is the raw cache of NBA Stats API
-(`stats.nba.com`) payloads for men's professional basketball — sibling to
-`hoopR-nba-raw` (ESPN cache) and to `wehoop-wnba-stats-raw` (women's
-pro stats placeholder).
+This repo is the raw cache of NBA Stats API (`stats.nba.com`) payloads
+for men's professional basketball — sibling to `hoopR-nba-raw` (ESPN
+cache) and to `wehoop-wnba-stats-raw` (women's pro stats).
 
-Today the repo contains only `README.md`, `.gitignore`, the RStudio
-project file, and these governance docs. The NBA Stats API **is** the
-raw layer, and the actual scrapers, schedules, and per-game JSON live
-in the sibling `hoopR-nba-stats-data` repo. Until a "raw split" lands,
-treat this repo as an empty namespace.
+**The raw split has landed.** This repo now holds the Python scrapers
+(`python/`), the bash entry points (`scripts/`), ~490k committed per-game
+and per-season JSON payloads under `nba_stats/`, and the per-season
+`.bundles/nba_stats_json_YYYY.tar.gz` archives that let consumers fetch a
+season without cloning the whole tree. Earlier revisions of this file
+described the repo as an empty placeholder; that is no longer true.
 
 Pipeline (current state):
-
-```
-NBA Stats API -> hoopR-nba-stats-data [scrape + cache + push]
-                        -> sportsdataverse-data releases
-                        -> hoopR R package (load_nba_*)
-```
-
-Pipeline (intended state, once activated):
 
 ```
 NBA Stats API -> hoopR-nba-stats-raw [HERE: scrape + cache + push trigger]
@@ -40,63 +31,51 @@ Do not confuse with:
 ## Repository Workflow
 
 - `main` is the default branch.
-- The repo currently has no CI, no scrapers, and no release surface.
-- Operational scrape work happens in `hoopR-nba-stats-data` — point
-  changes there until the raw-split activation lands.
-- Do not add Python or R scrapers here without a matching deletion from
-  `hoopR-nba-stats-data`; the two cannot run in parallel on the same
-  output paths.
+- Operational scrape work happens HERE. `hoopR-nba-stats-data` compiles
+  and releases; it must not scrape the same output paths in parallel.
+- Python lives in `python/`, tests in `tests/`, and `scripts/` holds bash
+  entry points only. `pyproject.toml` + `uv.lock` at the repo root pin the
+  environment; resolve the interpreter by sourcing `scripts/_venv.sh`
+  (never hardcode a path to a sibling repo's venv).
 
 ## Build & Development Commands
 
-There are no build commands today. When activated, the entry points
-would mirror `hoopR-nba-stats-data`:
-
 ```sh
-# Future state (in this repo):
-bash scripts/daily_nba_stats_raw_scraper.sh -s 2025 -e 2025 -r false
+uv sync --dev            # create/refresh .venv from uv.lock
+uv run pytest            # offline unit tests
+uv run ruff check python tests
 
-Rscript R/nba_stats_01_scrape_schedules.R              -s 2025 -e 2025 -r false
-Rscript R/nba_stats_02_scrape_pbp.R                    -s 2025 -e 2025 -r false
-Rscript R/nba_stats_03_scrape_boxscoretraditionalv2.R  -s 2025 -e 2025 -r false
+# Scrape entry points (bash only; each sources scripts/_venv.sh).
+bash scripts/daily_refresh.sh                    # current season top-up
+bash scripts/backfill_nba_stats_raw.sh 1996:2026 # full cold backfill
+bash scripts/supervise_sweep.sh 2016:2026        # restart-on-death wrapper
+bash scripts/publish_season_bundles.sh           # refresh .bundles/*.tar.gz
 ```
 
-Current state: run the equivalents in `hoopR-nba-stats-data`.
+Season encoding is the **start year** (`2025` = 2025-26).
 
-## Code Style (for future contributions)
+## Code Style
 
-- Match the conventions of `hoopR-nba-stats-data`:
-  - **R 4.0.0+**, tidyverse style: snake_case, 2-space indent, `%>%` pipes.
-  - `optparse` for CLI parsing on every `Rscript` entry point.
-  - `purrr::pluck()` chains with `%||%` fallbacks for NBA Stats result-set parsing.
-  - `dplyr::select(dplyr::any_of(...))` over bare-name selects (column drift).
-  - One file per task under `R/` (e.g., `nba_stats_0X_*.R`).
-- **Season encoding**: NBA seasons indexed by **start year**; the
-  `years_vec <- (start - 1):(end - 1)` shift inside scrapers is intentional.
+- **Python is the scrape language here.** There is no `R/` directory; the
+  R scrapers this repo once planned to inherit were superseded.
+- polars 1.x modern API only; fully type-hinted new modules; ruff-clean
+  against the pinned rule set in `pyproject.toml`.
+- **Season encoding**: NBA seasons are indexed by **start year** (`2025` =
+  2025-26). The API's `"2025-26"` string is built from it, not stored.
+- **TLS fingerprinting**: `stats.nba.com` blocks plain `requests` by JA3 —
+  it produces a *silent timeout*, not an error, so a "hang" is usually this.
+  All traffic goes through `curl_cffi` with `impersonate="chrome"`; see
+  `python/session_transport.py`.
+- **Per-endpoint season floors** live in `ENDPOINT_MIN_SEASON` with
+  `_skip_endpoint()` as the single owner of the comparison
+  (`python/scrape_raw_json.py`). Add a floor there, not at a call site.
 - **Proxy support**: NBA Stats rate-limits aggressively — production scrapes
   go through the rotating proxy pool. Never commit proxy
   IPs/credentials; route them through GitHub Actions secrets.
 
-## Activation Plan
-
-When this repo becomes the real raw cache:
-
-1. Move the per-game JSON tree `nba_stats/json/pbp/{season}/{game_id}.json`
-   from `hoopR-nba-stats-data` to this repo, and update `hoopR`'s
-   `load_nba_pbp()` family to read from
-   `raw.githubusercontent.com/sportsdataverse/hoopR-nba-stats-raw/main/nba_stats/...`.
-2. Move `R/nba_stats_0[1-3]_*.R` here; keep the compile/release scripts in
-   `hoopR-nba-stats-data`.
-3. Add `.github/workflows/hoopR_nba_stats_data_trigger.yml` to fire
-   `repository_dispatch` (event-type `daily_nba_stats_data`) on every push
-   to `main`.
-4. Wire the umbrella workflow `daily_nba_stats_raw.yml` with the same
-   cadence/inputs as `hoopR-nba-stats-data/daily_nba_stats.yml`, offset
-   ~2 hours earlier so the scrape lands before the parser pulls.
-
 ## Cross-Repo References
 
-- Active sibling (NBA Stats scrape today): <https://github.com/sportsdataverse/hoopR-nba-stats-data>
+- Downstream compile/release sibling: <https://github.com/sportsdataverse/hoopR-nba-stats-data>
 - Downstream R package: <https://github.com/sportsdataverse/hoopR>
 - ESPN NBA pair (same shape this repo would mirror): <https://github.com/sportsdataverse/hoopR-nba-raw>, <https://github.com/sportsdataverse/hoopR-nba-data>
 - Release tags: <https://github.com/sportsdataverse/sportsdataverse-data/releases>

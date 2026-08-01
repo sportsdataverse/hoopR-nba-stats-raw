@@ -1,0 +1,105 @@
+"""Tests for the per-endpoint season floor (`_skip_endpoint`).
+
+This file was dead for several months: `_skip_endpoint` was refactored into two
+inlined comprehensions (4ec4c143a4) and the import here broke, but the repo had
+no pyproject and no CI, and the file sat in `scripts/` where nothing collected
+it -- so nothing ever reported the failure. Both problems are fixed: the helper
+is a named module-level function again, and pytest collects `tests/`.
+
+`pythonpath = ["python"]` in pyproject puts the scraper modules on sys.path;
+there is deliberately no sys.path hack here.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+from scrape_raw_json import ENDPOINT_MIN_SEASON, _skip_endpoint
+
+# Real NBA seasons the scraper sweeps (start-year encoding).
+REAL_SEASONS = (1996, 2005, 2015, 2016, 2020, 2026)
+
+
+def test_endpoints_without_a_floor_are_never_skipped() -> None:
+    """The `.get(endpoint, 0)` default: absent from the table == no floor.
+
+    These two carry data for every season back to 1996, so a regression that
+    gave them a floor would silently truncate the archive.
+    """
+    for season in REAL_SEASONS:
+        assert not _skip_endpoint("playbyplayv3", season)
+        assert not _skip_endpoint("boxscoretraditionalv3", season)
+
+
+def test_floor_is_inclusive_at_the_boundary() -> None:
+    """Season == floor must be KEPT, not skipped.
+
+    The off-by-one here is the whole risk: boxscorematchupsv3 probes empty
+    through 2016-17 and populates from 2017-18, so 2017 is real data. An
+    exclusive comparison would drop a full season of matchup box scores.
+    """
+    floor = ENDPOINT_MIN_SEASON["boxscorematchupsv3"]
+    assert floor == 2017
+    assert _skip_endpoint("boxscorematchupsv3", floor - 1)
+    assert not _skip_endpoint("boxscorematchupsv3", floor)
+    assert not _skip_endpoint("boxscorematchupsv3", floor + 1)
+
+
+def test_gamerotation_floor_is_honoured_whatever_it_is_set_to() -> None:
+    """gamerotation is skipped below its floor and kept at/above it.
+
+    Asserted against the CONFIGURED floor rather than a hardcoded number,
+    because GAMEROTATION_MIN_SEASON is a supported override -- the documented
+    dedicated capture pass sets it to 2016, and a test pinned to the parked
+    sentinel would fail during exactly that run.
+    """
+    floor = ENDPOINT_MIN_SEASON["gamerotation"]
+    assert _skip_endpoint("gamerotation", floor - 1)
+    assert not _skip_endpoint("gamerotation", floor)
+
+
+def test_gamerotation_defaults_to_parked() -> None:
+    """With no override, the floor sits above any real season so the main sweep
+    skips gamerotation entirely.
+
+    It holds real data from 2015-16 but times out under the sweep's concurrency
+    and drags every 2016+ season, so it is captured by a separate low-concurrency
+    pass. If a future edit drops the sentinel back to 2016, the main sweep
+    silently gets slow again -- this is the alarm.
+
+    Read in a subprocess with the override cleared: the module-level dict is
+    built at import time, so monkeypatching the environment afterwards would
+    prove nothing.
+    """
+    src = (
+        "import os, sys;"
+        " os.environ.pop('GAMEROTATION_MIN_SEASON', None);"
+        " sys.path.insert(0, 'python');"
+        " import scrape_raw_json as s;"
+        " print(s.ENDPOINT_MIN_SEASON['gamerotation'])"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", src],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parent.parent,
+        check=True,
+    )
+    assert int(out.stdout.strip()) > max(REAL_SEASONS)
+
+
+def test_player_tracking_endpoints_share_the_sportvu_floor() -> None:
+    """SportVU tracking begins 2013-14; all six PT endpoints share that floor."""
+    pt_endpoints = (
+        "leaguedashptstats",
+        "leaguedashptdefend",
+        "leaguedashplayerptshot",
+        "leaguedashoppptshot",
+        "leaguedashteamptshot",
+        "leaguedashptteamdefend",
+    )
+    for endpoint in pt_endpoints:
+        assert _skip_endpoint(endpoint, 2012)
+        assert not _skip_endpoint(endpoint, 2013)

@@ -40,18 +40,41 @@ __all__ = [
 ]
 
 
-def payload_path(
-    root: str | Path, endpoint: str, season: int, variant: str | None = None
-) -> Path:
+def payload_path(root: str | Path, endpoint: str, season: int, variant: str | None = None) -> Path:
     """Where a season-level capture lives. ``variant=None`` means unparameterized."""
     base = Path(root) / endpoint
-    return (
-        base / str(season) / f"{variant}.json" if variant else base / f"{season}.json"
-    )
+    return base / str(season) / f"{variant}.json" if variant else base / f"{season}.json"
 
 
-def write_payload(path: Path, payload: Any) -> None:
-    """Persist ``payload`` atomically, so a killed sweep never leaves half a file."""
+def is_contentless(payload: Any) -> bool:
+    """True when ``payload`` carries nothing and must not be persisted.
+
+    stats.nba.com never answers with an empty body: an endpoint with no rows
+    still returns the full envelope with ``rowSet: []`` (see
+    leagueleaders/1996/playoffs_pergame.json). A bare ``{}`` therefore means the
+    getter could not parse a response -- a failed fetch, not "no data".
+
+    That distinction is load-bearing because resume is ``path.exists()``, i.e.
+    presence rather than content. One empty write is permanent: every later
+    sweep counts the file present, never refetches, and reports the season
+    complete, so a backfill no-ops. 3,347 files in hoopR-nba-stats-raw and
+    3,872 in wehoop-wnba-stats-raw reached that state before this guard.
+
+    Deliberately narrow -- ``{"resultSets": []}`` and a v3 payload whose entity
+    list is empty are REAL answers and are persisted.
+    """
+    return payload is None or not isinstance(payload, (dict, list)) or len(payload) == 0
+
+
+def write_payload(path: Path, payload: Any) -> bool:
+    """Persist ``payload`` atomically. Returns False (writing nothing) if it is
+    contentless.
+
+    Atomic so a killed sweep never leaves half a file; guarded so a failed fetch
+    never becomes a permanent gap.
+    """
+    if is_contentless(payload):
+        return False
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.partial")
     try:
@@ -60,20 +83,50 @@ def write_payload(path: Path, payload: Any) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    return True
+
+
+def _result_tables(payload: Any) -> list[dict]:
+    """Every ``{name, headers, rowSet}`` table in a stats.nba.com payload.
+
+    The envelope is not uniform, and iterating ``payload["resultSets"]`` blindly
+    is wrong for two of its shapes:
+
+    * ``resultSets`` as a LIST of tables -- the common case.
+    * ``resultSets`` as a single DICT (the shot-locations family). Iterating
+      that yields its KEYS, so the caller ends up calling ``.get()`` on a
+      string and raises AttributeError.
+    * ``resultSet`` SINGULAR, holding one table as a dict (leagueleaders,
+      *estimatedmetrics) -- invisible to anything looking only at the plural.
+
+    Returns an empty list for the v3 ``{<entity>, meta}`` payloads, which carry
+    no result tables at all.
+    """
+    if not isinstance(payload, dict):
+        return []
+    tables: list[dict] = []
+    for key in ("resultSets", "resultSet"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            tables.append(value)
+        elif isinstance(value, list):
+            tables.extend(t for t in value if isinstance(t, dict))
+    return tables
 
 
 def _ids_from(payload: Any, column: str) -> list[str]:
-    """Distinct values of ``column`` across a resultSets payload."""
-    if not isinstance(payload, dict):
-        return []
+    """Distinct values of ``column`` across every result table in ``payload``."""
     out: set[str] = set()
-    for rs in payload.get("resultSets") or []:
+    for rs in _result_tables(payload):
+        # The grouped family's headers are column-GROUP dicts, not name
+        # strings; str() on a dict cannot match a column name, so those tables
+        # are skipped rather than mis-indexed.
         headers = [str(h).upper() for h in rs.get("headers") or []]
         if column not in headers:
             continue
         idx = headers.index(column)
         for row in rs.get("rowSet") or []:
-            if row[idx] is not None:
+            if isinstance(row, list) and idx < len(row) and row[idx] is not None:
                 out.add(str(row[idx]))
     return sorted(out)
 
@@ -161,7 +214,12 @@ def capture_season(
             log(f"season {season} {endpoint}[{variant}]: {exc}")
             failed += 1
             continue
-        write_payload(path, payload)
+        if not write_payload(path, payload):
+            # Counted as a failure, not a write: leaving no file is what lets the
+            # next sweep retry it.
+            log(f"season {season} {endpoint}[{variant}]: empty payload, not persisted")
+            failed += 1
+            continue
         written += 1
         if is_team_source:
             team_source = payload
@@ -183,7 +241,10 @@ def capture_season(
                 log(f"season {season} commonteamroster[{team_id}]: {exc}")
                 failed += 1
                 continue
-            write_payload(path, payload)
+            if not write_payload(path, payload):
+                log(f"season {season} commonteamroster[{team_id}]: empty payload, not persisted")
+                failed += 1
+                continue
             written += 1
 
     return written, skipped, failed

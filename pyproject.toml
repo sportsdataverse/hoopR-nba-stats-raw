@@ -1,0 +1,74 @@
+[project]
+name = "hoopr-nba-stats-raw-scrape"
+version = "0.1.0"
+description = "stats.nba.com raw payload scrapers for the hoopR-nba-stats-raw archive."
+requires-python = ">=3.11"
+dependencies = [
+    "sportsdataverse>=0.0.73",
+    # stats.nba.com TLS/JA3-fingerprint-blocks plain `requests` -- it produces a
+    # SILENT TIMEOUT, not an error, so this is not interchangeable with requests.
+    # The transport impersonates Chrome.
+    "curl_cffi>=0.7",
+    "polars>=1.0,<2.0",
+    "pyarrow>=15.0",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+# ruff is declared, not assumed: CI runs `uv run ruff` inside the synced project
+# environment, which cannot see a globally-installed tool.
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+# The scrapers depend on sdv-py helpers that land on main ahead of PyPI.
+[tool.uv.sources]
+sportsdataverse = { git = "https://github.com/sportsdataverse/sportsdataverse-py", branch = "main" }
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# python/ is the source dir. The modules are run by path by scripts/*.sh and
+# imported as top-level names by each other, so they are exposed as py-modules
+# rather than a package.
+[tool.setuptools]
+py-modules = [
+    "endpoints",
+    "observability",
+    "period_capture",
+    "proxy",
+    "scrape_raw_json",
+    "season_capture",
+    "session_transport",
+    "topup_player_gamelogs",
+]
+
+[tool.setuptools.package-dir]
+"" = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["python"]
+markers = [
+    # Reads the committed nba_stats/ payload tree. Deselected in PR CI, which
+    # sparse-checkouts the code only -- a full checkout of this ~490k-file repo
+    # does not finish.
+    "archive: requires the committed nba_stats/ payload tree",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Pin the rule set explicitly. Relying on ruff's defaults makes the gate
+# version-sensitive -- a newer ruff can turn a green tree red with no code
+# change.
+select = [
+    "E4",  # pycodestyle: imports
+    "E7",  # pycodestyle: statement errors
+    "E9",  # pycodestyle: runtime/syntax errors
+    "F",   # pyflakes: dead imports, undefined names, unused locals
+    "I",   # isort: import order
+]
+# Explicit polars bool masks (pl.col("c") == True/False) are the project
+# convention (see the sdv-py CLAUDE.md "Polars version" section).
+ignore = ["E712"]
