@@ -45,7 +45,7 @@ from pathlib import Path
 
 from proxy import ProxyHealth, RoundRobin, load_proxies
 from scrape_raw_json import LEAGUE_ID, REPO, STATS_PREFIX, STORE_ENV, STORE_SUBDIR, _log
-from season_capture import plan_season, write_payload
+from season_capture import payload_path, plan_season, write_payload
 from session_transport import SessionTransport
 
 #: A payload this small cannot hold an envelope; anything larger is real.
@@ -156,9 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         for endpoint, variant, kwargs in plan_season(season, stats, STATS_PREFIX, LEAGUE_ID):
             if (endpoint, variant) not in wanted:
                 continue
-            path = root / endpoint / str(season) / (f"{variant}.json" if variant else "")
-            if variant is None:
-                path = root / endpoint / f"{season}.json"
+            path = payload_path(root, endpoint, season, variant)
             try:
                 payload = fetch(endpoint, kwargs)
             except Exception as exc:  # noqa: BLE001

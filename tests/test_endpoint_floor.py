@@ -12,6 +12,10 @@ there is deliberately no sys.path hack here.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 from scrape_raw_json import ENDPOINT_MIN_SEASON, _skip_endpoint
 
 # Real NBA seasons the scraper sweeps (start-year encoding).
@@ -43,17 +47,47 @@ def test_floor_is_inclusive_at_the_boundary() -> None:
     assert not _skip_endpoint("boxscorematchupsv3", floor + 1)
 
 
-def test_gamerotation_is_parked_for_every_real_season() -> None:
-    """gamerotation's floor is set ABOVE any real season to park it entirely.
+def test_gamerotation_floor_is_honoured_whatever_it_is_set_to() -> None:
+    """gamerotation is skipped below its floor and kept at/above it.
 
-    It holds real data from 2015-16 but times out under the main sweep's
-    concurrency, so it is captured by a dedicated low-concurrency pass that
-    overrides GAMEROTATION_MIN_SEASON. If a future edit drops the sentinel back
-    to 2016, the main sweep silently gets slow again -- this test is the alarm.
+    Asserted against the CONFIGURED floor rather than a hardcoded number,
+    because GAMEROTATION_MIN_SEASON is a supported override -- the documented
+    dedicated capture pass sets it to 2016, and a test pinned to the parked
+    sentinel would fail during exactly that run.
     """
-    assert ENDPOINT_MIN_SEASON["gamerotation"] > max(REAL_SEASONS)
-    for season in REAL_SEASONS:
-        assert _skip_endpoint("gamerotation", season)
+    floor = ENDPOINT_MIN_SEASON["gamerotation"]
+    assert _skip_endpoint("gamerotation", floor - 1)
+    assert not _skip_endpoint("gamerotation", floor)
+
+
+def test_gamerotation_defaults_to_parked() -> None:
+    """With no override, the floor sits above any real season so the main sweep
+    skips gamerotation entirely.
+
+    It holds real data from 2015-16 but times out under the sweep's concurrency
+    and drags every 2016+ season, so it is captured by a separate low-concurrency
+    pass. If a future edit drops the sentinel back to 2016, the main sweep
+    silently gets slow again -- this is the alarm.
+
+    Read in a subprocess with the override cleared: the module-level dict is
+    built at import time, so monkeypatching the environment afterwards would
+    prove nothing.
+    """
+    src = (
+        "import os, sys;"
+        " os.environ.pop('GAMEROTATION_MIN_SEASON', None);"
+        " sys.path.insert(0, 'python');"
+        " import scrape_raw_json as s;"
+        " print(s.ENDPOINT_MIN_SEASON['gamerotation'])"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", src],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parent.parent,
+        check=True,
+    )
+    assert int(out.stdout.strip()) > max(REAL_SEASONS)
 
 
 def test_player_tracking_endpoints_share_the_sportvu_floor() -> None:

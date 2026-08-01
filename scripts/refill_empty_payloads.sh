@@ -13,9 +13,10 @@
 # RUN THIS DIRECTLY IN YOUR OWN TERMINAL, not through an agent, and only from a
 # RESIDENTIAL IP: stats.nba.com hangs (does not error) on datacenter IPs.
 #
-#   bash scripts/refill_empty_payloads.sh                 # recoverable endpoints
-#   bash scripts/refill_empty_payloads.sh --all           # every empty, incl. unproven
-#   bash scripts/refill_empty_payloads.sh --check         # census only, no network
+#   bash scripts/refill_empty_payloads.sh                     # every empty found
+#   bash scripts/refill_empty_payloads.sh --check             # census only, no network
+#   bash scripts/refill_empty_payloads.sh 2015:2026           # season range
+#   bash scripts/refill_empty_payloads.sh --endpoint matchupsrollup
 #
 # Watch it live from another terminal:
 #   tail -f logs/refill_empty.log
@@ -30,25 +31,21 @@ cd "$REPO" || exit 1
 LOG="$REPO/logs/refill_empty.log"
 mkdir -p "$REPO/logs"
 
-# Endpoints a live probe confirmed DO return real data when refetched, so their
-# `{}` files are recoverable:
-#   leaguedash{player,team}shotlocations  all 7 measure types -> 30 rows
-#   leaguedashptteamdefend                30 rows
-#   matchupsrollup                        2,283 rows
-# Left out of the default run because a live probe got `{}` or a zero-row
-# envelope for them too -- they need a parameter fix first, not a refetch:
-#   playercompare (needs player-id lists), playergamelogs / teamgamelogs
-#   (zero-row envelope), draftcombine* (param shape), leaguedashteamstats
-#   MeasureType=Usage (genuinely unsupported: 1 of 7 variants, in both leagues).
-RECOVERABLE=(
-  leaguedashplayershotlocations
-  leaguedashteamshotlocations
-  leaguedashptteamdefend
-  matchupsrollup
-  leaguedashplayerclutch
-  shotchartleaguewide
-)
-
+# There is deliberately no allow-list of "recoverable" endpoints here.
+#
+# An earlier revision carried one, built from a live probe that turned out to be
+# invalid: it passed `measure_type_simple_detailed_defense`, which is not a
+# parameter of the shot-locations wrappers, so it fell through to **kwargs and
+# every "measure type" silently measured Base. That made five unsupported values
+# look recoverable.
+#
+# The real causes were parameter bugs, now fixed in endpoints.py: measure types
+# are narrowed to each parameter's own domain, and the season pin no longer
+# misses `season_nullable`. So the sweep does not generate these requests at
+# all any more, and this script simply refetches whatever `{}` files it finds --
+# a list that is empty on a healthy tree. Keeping it list-free means it cannot
+# go stale again, and it ports unchanged to wehoop-wnba-stats-raw, which has the
+# same defects and 3,872 of these files.
 export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
 
 # The census reads only the local tree, so it runs before the proxy gate.
@@ -81,29 +78,20 @@ if [ -n "$missing" ]; then
   exit 3
 fi
 
-# These payloads previously failed to capture; a too-short deadline is the most
-# likely reason (the shot-locations variants are the big ones). Give them well
-# past the 30s default -- the sweep's own gamerotation guidance uses 60.
+# These payloads previously failed to capture. Give them well past the 30s
+# default -- the sweep's own gamerotation guidance uses 60.
 export SDV_PY_NBA_STATS_TIMEOUT="${SDV_PY_NBA_STATS_TIMEOUT:-90}"
 echo "[$(date -u +%FT%TZ)] proxy config loaded; timeout=${SDV_PY_NBA_STATS_TIMEOUT}s" | tee -a "$LOG"
 
 {
   echo "=========================================================="
-  echo "[$(date -u +%FT%TZ)] refill START (${1:-recoverable-only})"
+  echo "[$(date -u +%FT%TZ)] refill START ${*:-}"
 } >> "$LOG"
 
-if [ "${1:-}" = "--all" ]; then
-  "$SDV_PY" python/refill_empty.py 2>&1 | tee -a "$LOG"
-  status=${PIPESTATUS[0]}
-else
-  status=0
-  for ep in "${RECOVERABLE[@]}"; do
-    echo "[$(date -u +%FT%TZ)] --- $ep ---" | tee -a "$LOG"
-    "$SDV_PY" python/refill_empty.py --endpoint "$ep" 2>&1 | tee -a "$LOG"
-    rc=${PIPESTATUS[0]}
-    [ "$rc" -ne 0 ] && status=$rc
-  done
-fi
+# Pass through any remaining args (a SEASON:RANGE, --endpoint X). Piped into
+# tee, so the shell would otherwise see tee's status, not the refiller's.
+"$SDV_PY" python/refill_empty.py "$@" 2>&1 | tee -a "$LOG"
+status=${PIPESTATUS[0]}
 
 echo "[$(date -u +%FT%TZ)] refill DONE EXIT=$status" | tee -a "$LOG"
 echo "Re-run the census to confirm:  bash scripts/refill_empty_payloads.sh --check" | tee -a "$LOG"

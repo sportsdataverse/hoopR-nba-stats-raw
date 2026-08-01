@@ -48,6 +48,19 @@ LOG="logs/nba_stats_raw_backfill_$(date +%Y%m%d_%H%M%S).log"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] START seasons=$SEASONS workers=$SCRAPE_WORKERS log=$LOG" | tee -a "$LOG"
 # --check first: sizes the sweep + verifies the proxy pool without fetching.
+# Its status was previously discarded, so a run with no proxies sailed past the
+# preflight into a sweep that could only hang. Note `set -e` would NOT catch
+# either of these: both are piped into tee, so the shell sees tee's status --
+# hence the explicit PIPESTATUS checks.
 PYTHONIOENCODING=utf-8 "$PYBIN" python/scrape_raw_json.py --check "$SEASONS" 2>&1 | tee -a "$LOG"
+check_rc=${PIPESTATUS[0]}
+if [ "$check_rc" -ne 0 ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] preflight failed (rc=$check_rc); not scraping" | tee -a "$LOG"
+  echo "EXIT=$check_rc" | tee -a "$LOG"
+  exit "$check_rc"
+fi
+
 "$PYBIN" python/scrape_raw_json.py "$SEASONS" 2>&1 | tee -a "$LOG"
-echo "EXIT=${PIPESTATUS[0]}" | tee -a "$LOG"   # grep-able completion marker
+rc=${PIPESTATUS[0]}
+echo "EXIT=$rc" | tee -a "$LOG"   # grep-able completion marker
+exit "$rc"
