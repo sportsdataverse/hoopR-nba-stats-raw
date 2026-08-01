@@ -66,16 +66,8 @@ MEASURE_TYPES = (
 #: An unlisted parameter falls back to the full tuple.
 MEASURE_TYPE_DOMAINS: dict[str, tuple[str, ...]] = {
     "measure_type_simple": ("Base", "Opponent"),
-    "measure_type_detailed_defense": (
-        "Base",
-        "Advanced",
-        "Misc",
-        "Four Factors",
-        "Scoring",
-        "Defense",
-        "Opponent",
-    ),
-    # Four Factors / Defense / Opponent answered empty here.
+    "measure_type_detailed_defense": MEASURE_TYPES,
+    # Four Factors / Defense / Opponent answered empty for these.
     "measure_type_player_game_logs_nullable": (
         "Base",
         "Advanced",
@@ -84,6 +76,46 @@ MEASURE_TYPE_DOMAINS: dict[str, tuple[str, ...]] = {
         "Usage",
     ),
 }
+
+#: Per-ENDPOINT narrowing, applied on top of the parameter default above.
+#:
+#: The domain is not purely a property of the parameter. leaguedashteamstats and
+#: leaguedashplayerstats both take `measure_type_detailed_defense`, but only the
+#: team one rejects Usage -- so keying solely by parameter name silently dropped
+#: Usage from leaguedashlineups / leaguedashplayerclutch / leaguedashplayerstats
+#: / leaguedashteamclutch / leaguelineupviz, all of which do support it.
+#:
+#: Derived by scanning the committed archive: a measure that is empty in EVERY
+#: captured season is unsupported; one populated in any season is supported.
+#: That is a far larger and more stable sample than live probing, which throttles
+#: and returns inconsistent negatives.
+ENDPOINT_MEASURE_TYPES: dict[str, tuple[str, ...]] = {
+    "leaguedashteamstats": tuple(m for m in MEASURE_TYPES if m != "Usage"),
+    "teamgamelogs": ("Base", "Advanced", "Misc", "Scoring"),
+}
+
+
+def measure_types_for(fn_name: str, param: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Values to sweep for ``param`` on the endpoint behind ``fn_name``.
+
+    Endpoint override beats parameter default beats the caller's full list.
+
+    ``fn_name`` is the wrapper's full name (``nba_stats_leaguedashteamstats``),
+    matched by SUFFIX. Splitting on the first underscore would be wrong -- the
+    league prefix itself contains one -- and this function has no access to the
+    prefix ``discover()`` used.
+    """
+    # Guard the axis. _SWEEPS also carries season_type and per_mode, and an
+    # endpoint override applied to those would set season_type_all_star="Base"
+    # and per_mode_detailed="Misc" -- silently turning one endpoint's matrix
+    # into the cube of its measure types.
+    if not param.startswith("measure_type"):
+        return default
+    for endpoint, values in ENDPOINT_MEASURE_TYPES.items():
+        if fn_name == endpoint or fn_name.endswith(f"_{endpoint}"):
+            return values
+    return MEASURE_TYPE_DOMAINS.get(param, default)
+
 
 #: Season / league parameters, most-specific first. Matched by EXACT name from
 #: this list rather than by prefix: prefix-matching "season" would also hit
@@ -189,7 +221,7 @@ def season_variants(
     for prefix, values in _SWEEPS:
         name = _match(params, prefix)
         if name:
-            axes.append((name, MEASURE_TYPE_DOMAINS.get(name, values)))
+            axes.append((name, measure_types_for(fn.__name__, name, values)))
 
     if not axes:
         yield None, base
