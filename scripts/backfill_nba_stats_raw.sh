@@ -40,8 +40,13 @@ fi
 
 export PYTHONUNBUFFERED=1      # real-time log lines, no buffering lag
 export PYTHONIOENCODING=utf-8  # cp1252 chokes on unicode in piped output
-export SCRAPE_WORKERS="${SCRAPE_WORKERS:-16}"         # pace knob; lower if the pool gets throttled
+export SCRAPE_WORKERS="${SCRAPE_WORKERS:-6}"          # pace knob; raise only if the pool stays healthy
 export PROXY_QUARANTINE_SECS="${PROXY_QUARANTINE_SECS:-600}"  # cooldown for a blocked proxy before retry
+# Per-request deadline. Defaulted HERE rather than inherited: the transport's own
+# fallback is 30s, and a 16-worker sweep at 30s produced ~3.7% timeout/err
+# (concentrated in the slow endpoints -- boxscoresummaryv2, leaguedashptteamdefend).
+# Those cost a whole extra pass to recover, so pay the wait up front.
+export SDV_PY_NBA_STATS_TIMEOUT="${SDV_PY_NBA_STATS_TIMEOUT:-90}"
 
 mkdir -p logs
 LOG="logs/nba_stats_raw_backfill_$(date +%Y%m%d_%H%M%S).log"
