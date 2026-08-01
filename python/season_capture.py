@@ -86,18 +86,47 @@ def write_payload(path: Path, payload: Any) -> bool:
     return True
 
 
-def _ids_from(payload: Any, column: str) -> list[str]:
-    """Distinct values of ``column`` across a resultSets payload."""
+def _result_tables(payload: Any) -> list[dict]:
+    """Every ``{name, headers, rowSet}`` table in a stats.nba.com payload.
+
+    The envelope is not uniform, and iterating ``payload["resultSets"]`` blindly
+    is wrong for two of its shapes:
+
+    * ``resultSets`` as a LIST of tables -- the common case.
+    * ``resultSets`` as a single DICT (the shot-locations family). Iterating
+      that yields its KEYS, so the caller ends up calling ``.get()`` on a
+      string and raises AttributeError.
+    * ``resultSet`` SINGULAR, holding one table as a dict (leagueleaders,
+      *estimatedmetrics) -- invisible to anything looking only at the plural.
+
+    Returns an empty list for the v3 ``{<entity>, meta}`` payloads, which carry
+    no result tables at all.
+    """
     if not isinstance(payload, dict):
         return []
+    tables: list[dict] = []
+    for key in ("resultSets", "resultSet"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            tables.append(value)
+        elif isinstance(value, list):
+            tables.extend(t for t in value if isinstance(t, dict))
+    return tables
+
+
+def _ids_from(payload: Any, column: str) -> list[str]:
+    """Distinct values of ``column`` across every result table in ``payload``."""
     out: set[str] = set()
-    for rs in payload.get("resultSets") or []:
+    for rs in _result_tables(payload):
+        # The grouped family's headers are column-GROUP dicts, not name
+        # strings; str() on a dict cannot match a column name, so those tables
+        # are skipped rather than mis-indexed.
         headers = [str(h).upper() for h in rs.get("headers") or []]
         if column not in headers:
             continue
         idx = headers.index(column)
         for row in rs.get("rowSet") or []:
-            if row[idx] is not None:
+            if isinstance(row, list) and idx < len(row) and row[idx] is not None:
                 out.add(str(row[idx]))
     return sorted(out)
 

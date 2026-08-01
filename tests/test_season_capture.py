@@ -21,6 +21,7 @@ from endpoints import (
     slug,
 )
 from season_capture import (
+    _ids_from,
     capture_season,
     game_ids_from_gamelog,
     payload_path,
@@ -379,3 +380,53 @@ def test_a_refused_write_is_retried_on_the_next_sweep(tmp_path: Path) -> None:
     w2, s2, _f2 = capture_season(2025, tmp_path, flaky, StubStats, "stub", LEAGUE_WNBA)
     assert w2 > 0, "the second sweep must refetch what the first refused to persist"
     assert s2 == 0, "nothing should have been skipped-as-present"
+
+
+# -- envelope shapes -----------------------------------------------------------
+#
+# stats.nba.com ships five envelope families (see sdv-py
+# sportsdataverse/schemas/raw/nba_stats_*.yaml). _ids_from used to iterate
+# payload["resultSets"] directly, which is only correct for one of them.
+
+
+def test_ids_from_reads_the_plural_list_envelope() -> None:
+    assert _ids_from(_team_payload((5, 7)), "TEAM_ID") == ["5", "7"]
+
+
+def test_ids_from_reads_the_singular_result_set_envelope() -> None:
+    """leagueleaders / *estimatedmetrics use `resultSet` (singular, a dict).
+    Anything looking only at the plural key sees nothing at all."""
+    payload = {
+        "resource": "leagueleaders",
+        "parameters": {},
+        "resultSet": {"name": "x", "headers": ["TEAM_ID"], "rowSet": [[9]]},
+    }
+    assert _ids_from(payload, "TEAM_ID") == ["9"]
+
+
+def test_ids_from_survives_the_grouped_dict_envelope() -> None:
+    """The shot-locations family keys `resultSets` to a DICT. Iterating it
+    yields its keys, so the old code called .get() on a string and raised
+    AttributeError."""
+    payload = {
+        "resource": "leaguedashteamshotlocations",
+        "parameters": {},
+        "resultSets": {
+            "name": "ShotLocations",
+            # column-GROUP dicts, not name strings
+            "headers": [{"name": "SHOT_CATEGORY", "columnNames": ["Restricted Area"]}],
+            "rowSet": [[1610612737, "Atlanta Hawks"]],
+        },
+    }
+    assert _ids_from(payload, "TEAM_ID") == []  # no match, and no exception
+
+
+def test_ids_from_ignores_v3_payloads() -> None:
+    """The v3 family carries no result tables at all."""
+    payload = {"meta": {"version": 1}, "boxScoreTraditional": {"gameId": "0029500001"}}
+    assert _ids_from(payload, "TEAM_ID") == []
+
+
+def test_ids_from_tolerates_a_short_row() -> None:
+    payload = {"resultSets": [{"headers": ["A", "TEAM_ID"], "rowSet": [[1], [2, 3]]}]}
+    assert _ids_from(payload, "TEAM_ID") == ["3"]
