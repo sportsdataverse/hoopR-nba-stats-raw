@@ -7,14 +7,10 @@ without touching stats.{nba,wnba}.com.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from endpoints import (  # noqa: E402
+from endpoints import (
     LEAGUE_WNBA,
     MEASURE_TYPES,
     PER_MODES,
@@ -23,7 +19,7 @@ from endpoints import (  # noqa: E402
     season_variants,
     slug,
 )
-from season_capture import (  # noqa: E402
+from season_capture import (
     capture_season,
     game_ids_from_gamelog,
     payload_path,
@@ -58,9 +54,7 @@ class StubStats:
     ): ...
 
     @staticmethod
-    def stub_leaguestandingsv3(
-        season=None, league_id=None, return_parsed=True, proxy_url=None
-    ): ...
+    def stub_leaguestandingsv3(season=None, league_id=None, return_parsed=True, proxy_url=None): ...
 
     @staticmethod
     def stub_leaguegamelog(
@@ -72,9 +66,7 @@ class StubStats:
     ): ...
 
     @staticmethod
-    def stub_commonteamroster(
-        season=None, team_id=None, league_id=None, return_parsed=True
-    ): ...
+    def stub_commonteamroster(season=None, team_id=None, league_id=None, return_parsed=True): ...
 
     @staticmethod
     def stub_playbyplayv3(game_id=None, return_parsed=True, proxy_url=None): ...
@@ -190,9 +182,7 @@ def test_capture_writes_then_skips(tmp_path: Path) -> None:
         calls.append(endpoint)
         return _team_payload() if endpoint == "leaguedashteamstats" else {"e": endpoint}
 
-    written, skipped, failed = capture_season(
-        2025, tmp_path, fetch, StubStats, "stub", LEAGUE_WNBA
-    )
+    written, skipped, failed = capture_season(2025, tmp_path, fetch, StubStats, "stub", LEAGUE_WNBA)
     planned = len(list(plan_season(2025, StubStats, "stub", LEAGUE_WNBA)))
     assert failed == 0 and skipped == 0
     assert written == planned + 2  # + one commonteamroster per team
@@ -212,28 +202,20 @@ def test_one_failing_endpoint_does_not_abort_the_season(tmp_path: Path) -> None:
     written, _skipped, failed = capture_season(
         2025, tmp_path, fetch, StubStats, "stub", LEAGUE_WNBA
     )
-    assert failed == len(
-        list(season_variants(StubStats.stub_leaguedashlineups, 2025, LEAGUE_WNBA))
-    )
+    assert failed == len(list(season_variants(StubStats.stub_leaguedashlineups, 2025, LEAGUE_WNBA)))
     assert written > 0
 
 
 def test_team_roster_ids_come_from_the_team_stats_capture(tmp_path: Path) -> None:
     def fetch(endpoint, kwargs):
-        return (
-            _team_payload((99,)) if endpoint == "leaguedashteamstats" else {"ok": True}
-        )
+        return _team_payload((99,)) if endpoint == "leaguedashteamstats" else {"ok": True}
 
     capture_season(2025, tmp_path, fetch, StubStats, "stub", LEAGUE_WNBA)
     assert (tmp_path / "commonteamroster" / "2025" / "99.json").exists()
 
 
 def test_game_ids_from_gamelog_zero_pads() -> None:
-    payload = {
-        "resultSets": [
-            {"headers": ["GAME_ID"], "rowSet": [[1022500001], ["1022500002"]]}
-        ]
-    }
+    payload = {"resultSets": [{"headers": ["GAME_ID"], "rowSet": [[1022500001], ["1022500002"]]}]}
     assert game_ids_from_gamelog(payload) == ["1022500001", "1022500002"]
     assert game_ids_from_gamelog(None) == []
 

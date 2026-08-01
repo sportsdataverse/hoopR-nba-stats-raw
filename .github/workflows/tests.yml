@@ -1,0 +1,60 @@
+name: tests
+
+# Before this, the repo had no CI at all, which is precisely how
+# tests/test_endpoint_floor.py stayed broken for months without anyone
+# noticing: the file sat in scripts/, nothing collected it, and there was no
+# job to report the ImportError. These tests touch no network.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # ~490k files under nba_stats/ plus the .bundles/ tarballs. A normal
+          # checkout does not finish -- the sibling wehoop-wbb-raw (533k) spent
+          # 15+ minutes cloning and never reached the tests. Check out the code
+          # only, which is why archive-backed tests are deselected below.
+          sparse-checkout: |
+            python
+            tests
+            scripts
+            pyproject.toml
+            uv.lock
+          sparse-checkout-cone-mode: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        # --frozen: a PR must not silently re-resolve the lockfile. The daily
+        # workflow is the only place that runs `uv lock --upgrade`.
+        run: uv sync --frozen --dev
+
+      - name: Tests
+        # `archive` tests read the committed nba_stats/ tree, which is not
+        # checked out here. They run on the runner that already holds it.
+        run: uv run pytest -q -m "not archive"
+
+      - name: Lint
+        run: uv run ruff check python tests
+
+      - name: Shell syntax
+        # scripts/ is bash-only by convention and the scrape entry points are
+        # not otherwise exercised by CI. This catches an unparseable script
+        # before a nightly sweep discovers it at 06:30 UTC.
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f" || exit 1
+          done
