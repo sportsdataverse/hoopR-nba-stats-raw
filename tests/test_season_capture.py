@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from endpoints import (
+    ENDPOINT_MEASURE_TYPES,
     LEAGUE_WNBA,
     MEASURE_TYPE_DOMAINS,
     MEASURE_TYPES,
@@ -41,6 +42,16 @@ class StubStats:
         league_id=None,
         return_parsed=True,
         proxy_url=None,
+    ): ...
+
+    @staticmethod
+    def stub_leaguedashplayerstats(
+        season=None,
+        season_type_all_star=None,
+        measure_type_detailed_defense=None,
+        per_mode_detailed=None,
+        league_id=None,
+        return_parsed=True,
     ): ...
 
     @staticmethod
@@ -131,7 +142,7 @@ def test_matrix_is_derived_from_the_signature() -> None:
     so the product is 7 measure types rather than all 8.
     """
     v = list(season_variants(StubStats.stub_leaguedashteamstats, 2025, LEAGUE_WNBA))
-    domain = MEASURE_TYPE_DOMAINS["measure_type_detailed_defense"]
+    domain = ENDPOINT_MEASURE_TYPES["leaguedashteamstats"]
     assert len(v) == len(SEASON_TYPES) * len(domain) * len(PER_MODES)
     slugs = [s for s, _k in v]
     assert len(set(slugs)) == len(slugs), "variant slugs must be unique"
@@ -144,17 +155,47 @@ def test_measure_types_are_narrowed_to_the_parameter_domain() -> None:
     what produced most of this archive's empty payloads: the endpoint accepts
     the parameter but the API cannot answer the value, and the unparseable body
     was persisted as `{}` and never retried."""
-    for fn, param in (
-        (StubStats.stub_leaguedashteamstats, "measure_type_detailed_defense"),
-        (StubStats.stub_leaguedashteamshotlocations, "measure_type_simple"),
-    ):
-        got = {k[param] for _s, k in season_variants(fn, 2025, LEAGUE_WNBA)}
-        assert got == set(MEASURE_TYPE_DOMAINS[param])
+    # Parameter-level default.
+    got = {
+        k["measure_type_simple"]
+        for _s, k in season_variants(StubStats.stub_leaguedashteamshotlocations, 2025, LEAGUE_WNBA)
+    }
+    assert got == set(MEASURE_TYPE_DOMAINS["measure_type_simple"]) == {"Base", "Opponent"}
 
-    # measure_type_simple accepts only these two -- the other six were 5/7 of
-    # every shot-locations capture (71.4% empty, identical in NBA and WNBA).
-    assert set(MEASURE_TYPE_DOMAINS["measure_type_simple"]) == {"Base", "Opponent"}
-    assert "Usage" not in MEASURE_TYPE_DOMAINS["measure_type_detailed_defense"]
+    # Endpoint-level override beats it. leaguedashteamstats rejects Usage while
+    # leaguedashplayerstats -- same parameter -- accepts it, so keying only by
+    # parameter name silently dropped Usage from five endpoints that support it.
+    got = {
+        k["measure_type_detailed_defense"]
+        for _s, k in season_variants(StubStats.stub_leaguedashteamstats, 2025, LEAGUE_WNBA)
+    }
+    assert got == set(ENDPOINT_MEASURE_TYPES["leaguedashteamstats"])
+    assert "Usage" not in got
+
+
+def test_endpoint_override_does_not_leak_into_other_axes() -> None:
+    """_SWEEPS also carries season_type and per_mode. An endpoint override
+    applied to those set season_type_all_star="Base" and per_mode_detailed="Misc",
+    turning one endpoint's matrix into the cube of its measure types (343
+    variants instead of 28)."""
+    for _s, kwargs in season_variants(StubStats.stub_leaguedashteamstats, 2025, LEAGUE_WNBA):
+        assert kwargs["season_type_all_star"] in SEASON_TYPES
+        assert kwargs["per_mode_detailed"] in PER_MODES
+
+
+def test_endpoints_sharing_a_parameter_keep_their_own_domains() -> None:
+    """The archive says leaguedashplayerstats supports Usage and
+    leaguedashteamstats does not, though both take measure_type_detailed_defense."""
+    player = {
+        k["measure_type_detailed_defense"]
+        for _s, k in season_variants(StubStats.stub_leaguedashplayerstats, 2025, LEAGUE_WNBA)
+    }
+    team = {
+        k["measure_type_detailed_defense"]
+        for _s, k in season_variants(StubStats.stub_leaguedashteamstats, 2025, LEAGUE_WNBA)
+    }
+    assert "Usage" in player
+    assert "Usage" not in team
 
 
 def test_four_factors_is_in_the_full_measure_type_list() -> None:
