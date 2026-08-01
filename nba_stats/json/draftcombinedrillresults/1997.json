@@ -1,0 +1,1 @@
+{"resource": "draftcombinedrillresults", "parameters": {"LeagueID": "00", "SeasonYear": "1997"}, "resultSets": [{"name": "Results", "headers": ["TEMP_PLAYER_ID", "PLAYER_ID", "FIRST_NAME", "LAST_NAME", "PLAYER_NAME", "POSITION", "STANDING_VERTICAL_LEAP", "MAX_VERTICAL_LEAP", "LANE_AGILITY_TIME", "MODIFIED_LANE_AGILITY_TIME", "THREE_QUARTER_SPRINT", "BENCH_PRESS"], "rowSet": []}]}
