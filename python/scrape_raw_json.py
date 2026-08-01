@@ -90,6 +90,43 @@ ENDPOINT_MIN_SEASON = {
     "gamerotation": int(os.environ.get("GAMEROTATION_MIN_SEASON", "9999")),
     "boxscorematchupsv3": 2017,  # probed: empty <=2016, populates 2017-18
     "boxscoredefensivev2": 2017,  # probed: empty <=2016, populates 2017-18
+    # --- PARKED: known-nonfunctional with the parameters this sweep can build.
+    # Same sentinel mechanism as gamerotation above: a floor over any real
+    # season, overridable so a fixed-parameter pass can re-enable one.
+    #
+    # These are not "empty seasons" -- every variant returns a body that does
+    # not parse, and each one now costs a FULL request timeout before the guard
+    # refuses to persist it. Measured on the 2026-08-01 sweep at
+    # SDV_PY_NBA_STATS_TIMEOUT=90 / SCRAPE_WORKERS=6: seasons 2014 and 2015 took
+    # 9m18s and 7m51s and wrote 0 and 2 files, ~37 failures each, essentially
+    # all from this list. Seasons without them ran in about a second.
+    #
+    # What each still needs before un-parking:
+    #   playercompare   requires player_id_list / vs_player_id_list; a
+    #                   season-level sweep has no player ids to supply. 28
+    #                   variants/season, so it dominates the wasted time.
+    #   draftcombine*   the season parameter is a draft YEAR string in a
+    #                   different format; `season_year` is accepted but the
+    #                   value shape is still wrong.
+    #
+    # Deliberately NOT parked, though they also fail on some seasons:
+    #   leaguedashptteamdefend  really does return data for recent seasons (30
+    #                   rows probed for 2023-24) and only fails across much of
+    #                   the tracking era, so it needs a MEASURED floor rather
+    #                   than the shared _PT one. Parking it would discard real
+    #                   captures; 4 variants/season is a tolerable cost until
+    #                   the floor is probed.
+    #   teamgamelogs    only its Usage variants fail. MEASURE_TYPE_DOMAINS is
+    #                   keyed by parameter name, and playergamelogs shares
+    #                   `measure_type_player_game_logs_nullable` while ACCEPTING
+    #                   Usage -- so the domain cannot separate them. Needs a
+    #                   per-endpoint override, not a domain edit.
+    "playercompare": int(os.environ.get("PLAYERCOMPARE_MIN_SEASON", "9999")),
+    "draftcombinestats": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
+    "draftcombinedrillresults": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
+    "draftcombineplayeranthro": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
+    "draftcombinespotshooting": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
+    "draftcombinenonstationaryshooting": int(os.environ.get("DRAFTCOMBINE_MIN_SEASON", "9999")),
     # --- season-level: player-tracking (SportVU) ---
     "leaguedashptstats": _PT,
     "leaguedashptdefend": _PT,
@@ -103,10 +140,16 @@ ENDPOINT_MIN_SEASON = {
     # --- season-level: Synergy play-types (2015-16+) ---
     "synergyplaytypes": 2015,
     # --- season-level: game-log v-endpoints (tracking-era, empty pre-2014) ---
-    "playercompare": 2014,
+    # playercompare is NOT listed here: it is parked above. A second entry for
+    # it would silently win (later key wins in a dict literal) and un-park it.
     "playergamelogs": 2014,
     "teamgamelogs": 2014,
 }
+# NOTE: a duplicated key in the literal above is INVISIBLE at runtime -- the
+# later one silently wins, which is exactly how the parked playercompare floor
+# got overridden by a stale 2014 entry. It cannot be caught by inspecting the
+# built dict (the duplicate is already gone), so
+# tests/test_endpoint_floor.py::test_no_duplicate_endpoint_keys parses the AST.
 
 
 def _skip_endpoint(endpoint: str, season: int) -> bool:
