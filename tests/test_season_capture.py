@@ -209,7 +209,10 @@ def test_season_is_pinned_even_when_spelled_nullable() -> None:
     """playergamelogs / teamgamelogs spell it `season_nullable`. The pin used to
     test the bare `season` only, so those endpoints were called with NO season
     filter and 100% of their captures came back empty in both leagues."""
-    for _v, kwargs in season_variants(StubStats.stub_playergamelogs, 2025, LEAGUE_WNBA):
+    # LEAGUE_NBA, not a dummy id: the span spelling is NBA-specific (sdv-py #327
+    # keys it off league_id -- the WNBA sends a bare calendar year), so asserting
+    # NBA behavior under the WNBA id would mask a league-keying bug.
+    for _v, kwargs in season_variants(StubStats.stub_playergamelogs, 2025, LEAGUE_NBA):
         assert kwargs.get("season_nullable") == "2025-26", "span string, not a bare year"
         assert "season" not in kwargs, "must not send a parameter the endpoint lacks"
 
@@ -227,9 +230,9 @@ def test_only_supported_axes_are_swept() -> None:
 
 def test_every_call_pins_season_and_league() -> None:
     for fn in (StubStats.stub_leaguedashteamstats, StubStats.stub_leaguestandingsv3):
-        for _v, kwargs in season_variants(fn, 2025, LEAGUE_WNBA):
+        for _v, kwargs in season_variants(fn, 2025, LEAGUE_NBA):
             assert kwargs["season"] == "2025-26", "span string, not a bare year"
-            assert kwargs["league_id"] == LEAGUE_WNBA
+            assert kwargs["league_id"] == LEAGUE_NBA
 
 
 def test_pinned_params_are_applied_only_where_accepted() -> None:
