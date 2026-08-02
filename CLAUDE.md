@@ -1,61 +1,151 @@
 # CLAUDE.md — hoopR-nba-stats-raw
 
-Placeholder "raw" slot in the SportsDataverse **hoopR** NBA Stats pipeline — the intended
-home for a raw cache of NBA Stats API (`stats.nba.com`) per-game JSON, mirroring the
-ESPN-side `hoopR-nba-raw` / `hoopR-nba-data` split. **Not active today**: scrapers,
-schedules, per-game JSON, and the proxy/rate-limit helpers all live in the sibling
-**`hoopR-nba-stats-data`** repo, which both scrapes stats.nba.com and commits the cache.
-Downstream consumers read from `hoopR-nba-stats-data` directly until/unless this repo is
-activated. Contact: Saiem Gilani <saiem.gilani@gmail.com>. License MIT.
+**Active** raw cache of NBA Stats API (`stats.nba.com`) JSON for the
+SportsDataverse hoopR NBA pipeline. The raw split has landed: this repo holds
+the Python scrapers (`python/`), the bash drivers (`scripts/`), ~490k committed
+per-game and per-season payloads under `nba_stats/json/`, and the per-season
+`.bundles/nba_stats_json_YYYY.tar.gz` release assets (tag `nba-stats-raw-json`)
+that let consumers fetch a season without cloning the tree. Scrape + cache +
+commit happen HERE; compile/release happens in the sibling
+`hoopR-nba-stats-data`. Contact: Saiem Gilani <saiem.gilani@gmail.com>. MIT.
 
-## Current contents (verified)
-
-Governance + project shell only — no `R/`, no `scripts/`, no `DESCRIPTION`, no
-`requirements.txt`, no `.github/workflows/`:
-
-```
-README.md                  # one-line stub
-.gitignore  .Rproj         # RStudio project shell
-.github/                   # ISSUE_TEMPLATE/ + pull_request_template.md + copilot-instructions.md
-CLAUDE.md  CONTRIBUTING.md  CODE_OF_CONDUCT.md
-LICENSE  LICENSE.md        # MIT
+```text
+NBA Stats API -> hoopR-nba-stats-raw [HERE: scrape + cache + commit]
+                        -> hoopR-nba-stats-data [compile + release]
+                        -> sportsdataverse-data releases
+                        -> hoopR R package (load_nba_*)
 ```
 
-There are no commands to run here. Operational scrape commands live in
-`hoopR-nba-stats-data` (`bash scripts/daily_nba_stats_scraper.sh -s YYYY -e YYYY -r <bool>`).
+Don't confuse with `hoopR-nba-raw` (ESPN NBA cache) or `wehoop-wnba-stats-raw`
+(the WNBA analog of this repo — same `scrape_raw_json.py` shape, its own
+period math).
 
-## Conventions (for if/when code lands)
+## Layout
 
-- Mirror `hoopR-nba-stats-data`: R >= 4.0.0, one-file-per-task optparse R scripts, magrittr
-  `%>%`, snake_case, 2-space indent. Raw repos commit raw JSON to git (the intentional SDV
-  pattern) — don't warn about repo bloat.
-- **Season = start year** on disk; scrapers shift internally `(start-1):(end-1)` to hit NBA
-  Stats' season-end param. Preserve that asymmetry when porting.
-- Daily scrape commit subject must stay verbatim `NBA Stats Update (Start: YYYY End: YYYY)`
-  — downstream tooling parses years from it (`scraper_commit_format_loadbearing`).
-- Code/infra commits: Conventional Commits (`feat(scrape):`, `ci:`). Never add AI co-author
-  trailers to commits.
+`pyproject.toml` + `uv.lock` pin this repo's own `.venv` (`uv sync --dev`).
+Every driver resolves the interpreter by sourcing `scripts/_venv.sh`
+(`$NBA_VENV_PYTHON` override → repo `.venv`) — deliberately NOT `uv run`,
+which would resync the venv under a running multi-hour sweep.
 
-## Gotchas — NBA Stats API + activation
+`python/` — the scrape package:
 
-- **This is not the scrape entry point today** — wire CI/cron against `hoopR-nba-stats-data`.
-- NBA Stats requests are issued by hoopR (`hoopR::nba_pbp()` / `nba_schedule()`), which own
-  the UA/referer/headers; the data repo adds the rotating proxy + a trailing-window
-  `rate_limit()` token bucket (`STATS_RATE_MAX/WINDOW/HITS`, sequential-only, no `furrr`).
-  Any scraper added here must reuse that proxy/rate-limit discipline. Never commit proxy
-  IPs/credentials (`PROXY_KEY`/`PROXY_PKG`/`PROXY_ENDPOINT` are GitHub secrets only).
-- NBA Stats schema drift is fixed in the **hoopR SDK**, not in scrapers landed here.
-- Don't confuse with `hoopR-nba-raw` (ESPN cache, actively maintained) or
-  `wehoop-wnba-stats-raw` (the women's-pro placeholder analog).
-- Activation, if it happens (mirror `hoopR-nba-raw` / `wehoop-wbb-raw`): move
-  `nba_stats/json/pbp/{game_id}.json` here, split scrape vs compile/publish, add a
-  `repository_dispatch` trigger workflow against `hoopR-nba-stats-data`, and bring the
-  proxy/rate-limit helpers along. Coordinate every add here with the matching delete in
-  `hoopR-nba-stats-data`.
+- `scrape_raw_json.py` — the main sweep. Three passes per season:
+  season-level endpoints (`season_capture`), per-game payloads through
+  sdv-py's read-through raw store (`SDV_PY_NBA_RAW_JSON_DIR` →
+  `{endpoint}/{season}/{game_id}.json`, atomic tmp+rename), and per-period
+  boxscores (`boxscoretraditionalv3_period`, windows from `period_capture`).
+  Game discovery reads the `leaguegamelog` payload pass 1 just persisted.
+  `ENDPOINT_MIN_SEASON` + `_skip_endpoint()` are the single owner of
+  per-endpoint season floors; PARKED endpoints (gamerotation, playercompare,
+  draftcombine*) sit behind a `<ENDPOINT>_MIN_SEASON` env sentinel so each is
+  independently re-enablable.
+- `endpoints.py` — declarative capture registry; each endpoint's parameter
+  matrix is derived from its own wrapper signature, so new upstream endpoints
+  are captured without an edit. Drives both this repo and the WNBA sibling.
+- `season_capture.py` — season-level writes: `{endpoint}/{season}/{variant}.json`
+  or flat `{endpoint}/{season}.json`; atomic, presence-skip resumable,
+  sequential (a few hundred calls/season). Refuses to persist an empty `{}`.
+- `period_capture.py` — NBA per-period request windows, delegated to sdv-py's
+  `nba_lineups._period_start_range` so capture can't drift from the reader.
+- `session_transport.py` — thread-local sticky `curl_cffi` sessions, one proxy
+  per session; rotates on `SESSION_MAX_REQUESTS` / `SESSION_MAX_SECS` / any
+  fault; retries transient 500s in-session (`SESSION_SERVER_ERR_RETRIES`).
+- `proxy.py` — ProxyBonanza round-robin pool. `PROXY_ENDPOINT` / `PROXY_KEY` /
+  `PROXY_PKG` read from env at call time; `redact()` before logging any URL.
+- `observability.py` — `Progress` heartbeat (rate + ETA every
+  `HEARTBEAT_SECS`), miss classification (`endpoint_absent` / `timeout` /
+  `throttled` / `error`), `ProxyHealth` quarantine, `Degradation` alerts.
+  Structured fetch log: `logs/errors.jsonl`.
+- `refill_empty.py` — repair: deletes season-level files ≤2 bytes (exactly
+  `{}` / `[]`) and refetches those tuples. See "Repair flow".
+- `topup_player_gamelogs.py` — one-off top-up of the PLAYER `leaguegamelog`
+  variant (`{season_type}_p.json` beside the team captures). Complete; kept
+  for reference as the pattern for additive variant top-ups.
+
+`scripts/` — bash entry points only (each sources `_venv.sh`):
+`daily_refresh.sh`, `backfill_nba_stats_raw.sh`, `supervise_sweep.sh`,
+`commit_loop.sh`, `commit_raw_json.sh`, `refill_empty_payloads.sh`,
+`publish_season_bundles.sh`.
+
+`tests/` — offline unit tests (`uv run pytest`; no network), run by the only
+workflow in `.github/workflows/` (`tests.yml`).
+
+## Daily flow — droplet cron, NOT GitHub Actions
+
+`daily_refresh.sh` is the cron entry point, and the cron lives OUT of this
+repo: it runs on the **sdv-data droplet** (stats.nba.com hangs — never errors
+— on datacenter/cloud IPs, so no GHA job can host the scrape; the only in-repo
+workflow is offline tests). Droplet setup, the `~/.config/sdv/env` secrets
+file the scripts source, the egress canary, and the cron entries are
+documented in the sibling repo:
+`hoopR-nba-stats-data/scripts/P0_DROPLET_RUNBOOK.md`.
+
+The script computes the current END-year season (October rolls to the next
+year), sweeps it idempotently, and only runs `commit_raw_json.sh` when the
+sweep exits 0 — a failed sweep never publishes a partial season.
+
+## Backfill flow
+
+`backfill_nba_stats_raw.sh [LO:HI]` (default `1996:2026`) is the cold-backfill
+driver: run it YOURSELF in a terminal on a residential IP. It exports
+`PROXY_*` from `~/.Renviron` (R reads that file; Python does not) and fails
+fast if they're missing. Resumable — on-disk payloads are skipped, Ctrl-C +
+rerun is always safe. `supervise_sweep.sh` is the crash-restart wrapper
+(relaunches on abnormal death, stops on "sweep complete", gives up after
+`MAX_RESTARTS`); launch it under tmux. `commit_loop.sh <launcher_pid>` runs
+alongside a long sweep and commits finished seasons on a timer (`INTERVAL`,
+default 300s) so a crashed box can't lose gigabytes of captured work.
+
+`commit_raw_json.sh` stages both store shapes
+(`{endpoint}/{season}/*.json` and flat `{endpoint}/{season}.json`), one
+commit per season. The subject `NBA Stats Update (Start: YYYY End: YYYY)` is
+load-bearing verbatim — downstream tooling parses the years.
+`publish_season_bundles.sh` refreshes the per-season tarballs on the
+`nba-stats-raw-json` release (`DRY_RUN=1` to build without uploading).
+
+## Repair flow (recurring, not one-off)
+
+Resume is `path.exists()` — presence, not content — so any payload persisted
+empty blocks its own refetch forever. The write guard now refuses empty `{}`
+payloads, but files already on disk must be repaired:
+`bash scripts/refill_empty_payloads.sh` (`--check` = census only, no network;
+optional `LO:HI` / `--endpoint <slug>`). Run it after any large sweep;
+residential IP, same proxy requirements as the backfill. Deleted files are
+tracked in git, so `git checkout -- nba_stats/` restores them if a run goes
+wrong.
+
+## Conventions & gotchas
+
+- **Season = END year** on disk and in CLI args (1995-96 ⇒ `1996`;
+  `2026` = 2025-26). Disk dirs and commit labels use it verbatim.
+- **TLS/JA3**: `stats.nba.com` blocks plain `requests` with a *silent
+  timeout*, not an error — a "hang" is usually this. All traffic goes through
+  `curl_cffi` `impersonate="chrome"` (`session_transport.py`).
+- **Rate tuning is env-only** — never hardcode pace. The knobs:
+
+  | Env | Default | Meaning |
+  | --- | --- | --- |
+  | `SCRAPE_WORKERS` | 6 (daily: 4) | per-game fetch threads |
+  | `SDV_PY_NBA_STATS_TIMEOUT` | 30 (drivers set 90) | per-request timeout (s) |
+  | `HEARTBEAT_SECS` | 60 | progress/IP-health log cadence |
+  | `SESSION_MAX_REQUESTS` / `SESSION_MAX_SECS` | 120 / 300 | sticky-session rotation |
+  | `SESSION_SERVER_ERR_RETRIES` | 2 | in-session 500 retries |
+  | `PROXY_ENDPOINT` / `PROXY_KEY` / `PROXY_PKG` | — | ProxyBonanza creds (required) |
+  | `<ENDPOINT>_MIN_SEASON` | per-endpoint | floor override / un-park |
+
+- Never commit proxy IPs/credentials; creds come from `~/.Renviron` (manual
+  runs) or `~/.config/sdv/env` (droplet). `redact()` proxy URLs in logs.
+- Writes are atomic (tmp + rename); `*.json.tmp` is gitignored — a commit can
+  never catch a half-written file.
+- Raw repos commit raw JSON to git (the intentional SDV pattern) — don't warn
+  about repo bloat.
+- Code/infra commits: Conventional Commits (`feat(scrape):`, `chore:`). Never
+  add AI co-author trailers.
 
 ## Cross-repo
 
-- Active sibling: <https://github.com/sportsdataverse/hoopR-nba-stats-data>
+- Compile/release sibling: <https://github.com/sportsdataverse/hoopR-nba-stats-data>
+- WNBA analog: <https://github.com/sportsdataverse/wehoop-wnba-stats-raw>
 - Downstream R package: <https://github.com/sportsdataverse/hoopR>
 - ESPN siblings: <https://github.com/sportsdataverse/hoopR-nba-raw> · <https://github.com/sportsdataverse/hoopR-nba-data>
 - Release tags: <https://github.com/sportsdataverse/sportsdataverse-data/releases>
