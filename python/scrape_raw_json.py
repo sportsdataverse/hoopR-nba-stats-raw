@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Scrape stats.nba.com raw JSON into this repo's nba_stats/json tree.
 
-THIS repo owns filling the WNBA raw store. Compile/build jobs elsewhere
+THIS repo owns filling the NBA raw store. Compile/build jobs elsewhere
 (hoopR-nba-stats-data, sdv-py's nba possession engine) consume the tree as pure readers
 (``SDV_PY_NBA_RAW_JSON_DIR`` + ``SDV_PY_NBA_RAW_JSON_READONLY=1``) and never
 write it — the raw-vs-data separation of concerns, mirrored by wehoop-wnba-stats-raw.
@@ -36,11 +36,11 @@ pool instead of hanging).
 Seasons on the CLI are plain calendar years: ``2024`` or ``1997:2026``.
 ``--check`` sizes the sweep and verifies the proxy pool without fetching anything.
 
-Run with the wehoop-wnba-stats-data venv (carries sportsdataverse+curl_cffi; this
-repo deliberately has no Python project of its own):
+Run with this repo's own venv (``pyproject.toml`` + ``uv.lock`` pin
+sportsdataverse + curl_cffi; the bash entry points resolve it by sourcing
+``scripts/_venv.sh``):
 
-    /mnt/sdv_repos/hoopR-nba-stats-data/python/.venv/bin/python \\
-      scripts/scrape_raw_json.py 1997:2026
+    uv run python python/scrape_raw_json.py 1997:2026
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-# ---- league binding: the only WNBA-specific block ---------------------------
+# ---- league binding: the only NBA-specific block ----------------------------
 LEAGUE_SLUG = "nba"
 LEAGUE_ID = "00"
 STATS_PREFIX = "nba_stats"

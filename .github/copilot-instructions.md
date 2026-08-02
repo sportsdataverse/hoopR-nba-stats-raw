@@ -52,7 +52,7 @@ bash scripts/supervise_sweep.sh 2016:2026        # restart-on-death wrapper
 bash scripts/publish_season_bundles.sh           # refresh .bundles/*.tar.gz
 ```
 
-Season encoding is the **start year** (`2025` = 2025-26).
+Season encoding is the **end year** (`2026` = 2025-26).
 
 ## Code Style
 
@@ -60,8 +60,13 @@ Season encoding is the **start year** (`2025` = 2025-26).
   R scrapers this repo once planned to inherit were superseded.
 - polars 1.x modern API only; fully type-hinted new modules; ruff-clean
   against the pinned rule set in `pyproject.toml`.
-- **Season encoding**: NBA seasons are indexed by **start year** (`2025` =
-  2025-26). The API's `"2025-26"` string is built from it, not stored.
+- **Season encoding**: NBA seasons are labelled by **end year** (`2026` =
+  2025-26) — commit subjects (`commit_raw_json.sh`), `daily_refresh.sh`'s
+  current-season math, the per-game store dirs (`season_of()` in
+  `python/period_capture.py`), and the sdv-py raw-store convention all use
+  it. One exception: the season-level half of the store keys its dirs by
+  start year (`{endpoint}/2023/` holds 2023-24 — see the comment in
+  `python/topup_player_gamelogs.py`).
 - **TLS fingerprinting**: `stats.nba.com` blocks plain `requests` by JA3 —
   it produces a *silent timeout*, not an error, so a "hang" is usually this.
   All traffic goes through `curl_cffi` with `impersonate="chrome"`; see
