@@ -67,7 +67,11 @@ MEASURE_TYPES = (
 MEASURE_TYPE_DOMAINS: dict[str, tuple[str, ...]] = {
     "measure_type_simple": ("Base", "Opponent"),
     "measure_type_detailed_defense": MEASURE_TYPES,
-    # Four Factors / Defense / Opponent answered empty for these.
+    # The PLAYER-side domain. Four Factors / Opponent answer {} on
+    # playergamelogs (calm re-probe 2026-08-02) -- they are team-level
+    # concepts, exactly mirroring Usage being player-only. teamgamelogs
+    # shares this parameter NAME but not this domain; its override below
+    # carries Four Factors + Opponent instead of Usage.
     "measure_type_player_game_logs_nullable": (
         "Base",
         "Advanced",
@@ -91,7 +95,14 @@ MEASURE_TYPE_DOMAINS: dict[str, tuple[str, ...]] = {
 #: and returns inconsistent negatives.
 ENDPOINT_MEASURE_TYPES: dict[str, tuple[str, ...]] = {
     "leaguedashteamstats": tuple(m for m in MEASURE_TYPES if m != "Usage"),
-    "teamgamelogs": ("Base", "Advanced", "Misc", "Scoring"),
+    # Measured live 2026-08-02 (both leagues): Four Factors and Opponent each
+    # return full seasons (NBA 2,460 rows, WNBA 480), so the earlier
+    # Base/Advanced/Misc/Scoring tuple -- derived by scanning an archive
+    # captured under the poisoned TeamID default -- was two measures short.
+    # Usage stays out: {} on teamgamelogs in both leagues even with valid
+    # params (usage is a player concept; the team FF/Opponent measures are
+    # the mirror image, {} on playergamelogs).
+    "teamgamelogs": ("Base", "Advanced", "Four Factors", "Misc", "Scoring", "Opponent"),
 }
 
 
@@ -124,7 +135,7 @@ def measure_types_for(fn_name: str, param: str, default: tuple[str, ...]) -> tup
 #: (playergamelogs, teamgamelogs) were called with NO season filter at all --
 #: the API answered nothing and 100% of those captures were empty in both
 #: leagues.
-_SEASON_PARAMS = ("season", "season_nullable", "season_year")
+_SEASON_PARAMS = ("season", "season_nullable", "season_year", "season_all_time")
 _LEAGUE_PARAMS = ("league_id", "league_id_nullable")
 
 PER_MODES = ("Totals", "PerGame")
@@ -207,9 +218,14 @@ _PINS: tuple[tuple[str, Any], ...] = (("group_quantity", LINEUP_GROUP_QUANTITY),
 
 #: Season parameters that want the NBA's two-year span string ("2023-24").
 #:
-#: `season_year` is deliberately absent: on the draftcombine* endpoints it is a
-#: DRAFT year, a genuine single year, and spanning it would break them.
-_SPAN_SEASON_PARAMS = ("season", "season_nullable")
+#: `season_year` is deliberately absent: on the draftcombine* endpoints the
+#: probed shape is a bare draft year ("2019" -> 77 rows, 2026-08-02; the span
+#: is ALSO accepted, but bare is what hoopR sends and what the archive holds).
+#: `season_all_time` (draftcombinestats' spelling) IS spanned -- "2019-20"
+#: returned 77 rows on the same probe; the sweep had never sent it a season at
+#: all because the name wasn't in _SEASON_PARAMS, so the endpoint was
+#: misdiagnosed as parameter-broken.
+_SPAN_SEASON_PARAMS = ("season", "season_nullable", "season_all_time")
 
 
 def season_string(season: int) -> str:

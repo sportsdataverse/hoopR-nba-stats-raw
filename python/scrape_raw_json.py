@@ -108,42 +108,45 @@ ENDPOINT_MIN_SEASON = {
     "leaguelineupviz": 2007,
     "boxscorematchupsv3": 2017,  # probed: empty <=2016, populates 2017-18
     "boxscoredefensivev2": 2017,  # probed: empty <=2016, populates 2017-18
-    # --- PARKED: known-nonfunctional with the parameters this sweep can build.
+    # --- PARKED: needs an input the season sweep cannot build.
     # Same sentinel mechanism as gamerotation above: a floor over any real
     # season, overridable so a fixed-parameter pass can re-enable one.
     #
-    # These are not "empty seasons" -- every variant returns a body that does
-    # not parse, and each one now costs a FULL request timeout before the guard
-    # refuses to persist it. Measured on the 2026-08-01 sweep at
-    # SDV_PY_NBA_STATS_TIMEOUT=90 / SCRAPE_WORKERS=6: seasons 2014 and 2015 took
-    # 9m18s and 7m51s and wrote 0 and 2 files, ~37 failures each, essentially
-    # all from this list. Seasons without them ran in about a second.
+    #   playercompare   VERIFIED FUNCTIONAL (calm probe 2026-08-02:
+    #                   PlayerIDList=2544 vs 201142, 2023-24 -> OverallCompare
+    #                   + Individual rows). It is ENTITY-keyed like
+    #                   shotchartlineupdetail: without real player-id lists the
+    #                   28 variants/season all time out, which is what dragged
+    #                   the 2026-08-01 sweep (seasons 2014/2015 took 9m18s /
+    #                   7m51s). Un-parking is a per-entity capture design, not
+    #                   a parameter fix.
     #
-    # What each still needs before un-parking:
-    #   playercompare   requires player_id_list / vs_player_id_list; a
-    #                   season-level sweep has no player ids to supply. 28
-    #                   variants/season, so it dominates the wasted time.
-    #   draftcombine*   the season parameter is a draft YEAR string in a
-    #                   different format; `season_year` is accepted but the
-    #                   value shape is still wrong.
-    #
-    # Deliberately NOT parked, though they also fail on some seasons:
-    #   leaguedashptteamdefend  really does return data for recent seasons (30
-    #                   rows probed for 2023-24) and only fails across much of
-    #                   the tracking era, so it needs a MEASURED floor rather
-    #                   than the shared _PT one. Parking it would discard real
-    #                   captures; 4 variants/season is a tolerable cost until
-    #                   the floor is probed.
+    # Deliberately NOT parked:
+    #   leaguedashptteamdefend  floor is simply the shared _PT one -- calm
+    #                   probes (2026-08-02) return 30 rows at 2013-14, 2015-16
+    #                   and 2016-17; the earlier "fails across the tracking
+    #                   era" was throttle noise, not a data boundary.
     #   teamgamelogs    fully solved by the span season string (2,460 rows
     #                   measured); its Usage variant returns {} even with valid
     #                   params (both leagues), so ENDPOINT_MEASURE_TYPES in
-    #                   endpoints.py excludes Usage for it.
+    #                   endpoints.py excludes Usage for it (and now carries the
+    #                   probed Four Factors + Opponent team measures instead).
+    #   draftcombine*   UN-PARKED 2026-08-02. The park rationale ("value shape
+    #                   still wrong") was a misdiagnosis: calm probes return
+    #                   full tables with the exact bare-year `season_year` the
+    #                   sweep builds (77 rows, 2019, all four per-year
+    #                   endpoints). draftcombinestats was different -- its
+    #                   season param is spelled `season_all_time`, which
+    #                   _SEASON_PARAMS never matched, so it was swept with NO
+    #                   season at all; endpoints.py now matches + spans it.
+    #                   Floor 2000 is measured (valid zero-row envelopes
+    #                   1996-99, 65 rows in 2000).
     "playercompare": _parked("playercompare"),
-    "draftcombinestats": _parked("draftcombinestats"),
-    "draftcombinedrillresults": _parked("draftcombinedrillresults"),
-    "draftcombineplayeranthro": _parked("draftcombineplayeranthro"),
-    "draftcombinespotshooting": _parked("draftcombinespotshooting"),
-    "draftcombinenonstationaryshooting": _parked("draftcombinenonstationaryshooting"),
+    "draftcombinestats": 2000,
+    "draftcombinedrillresults": 2000,
+    "draftcombineplayeranthro": 2000,
+    "draftcombinespotshooting": 2000,
+    "draftcombinenonstationaryshooting": 2000,
     # --- season-level: player-tracking (SportVU) ---
     "leaguedashptstats": _PT,
     "leaguedashptdefend": _PT,
@@ -169,17 +172,15 @@ ENDPOINT_MIN_SEASON = {
 # tests/test_endpoint_floor.py::test_no_duplicate_endpoint_keys parses the AST.
 
 
-#: Season CEILINGS -- the archive shows these stop publishing entirely after
-#: the listed season (draftcombine* is 2000-2019: answers-but-empty before
-#: 2000 and NOTHING after 2019). Only consulted by _skip_endpoint; irrelevant
-#: while an endpoint is parked, load-bearing the moment it is un-parked.
-ENDPOINT_MAX_SEASON = {
-    "draftcombinestats": 2019,
-    "draftcombinedrillresults": 2019,
-    "draftcombineplayeranthro": 2019,
-    "draftcombinespotshooting": 2019,
-    "draftcombinenonstationaryshooting": 2019,
-}
+#: Season CEILINGS -- an endpoint that stops publishing entirely after the
+#: listed season. Only consulted by _skip_endpoint. Currently EMPTY: the
+#: draftcombine* 2019 ceilings recorded here until 2026-08-02 were false --
+#: calm probes return 74/83/83 rows for 2021/2022/2024 (the "NOTHING after
+#: 2019" reading came from the era when draftcombinestats was swept with no
+#: season param at all). A ceiling belongs here only when a calm probe of
+#: later seasons keeps answering a VALID ZERO-ROW envelope, never from
+#: absence-of-capture alone.
+ENDPOINT_MAX_SEASON: dict[str, int] = {}
 
 
 def _skip_endpoint(endpoint: str, season: int) -> bool:

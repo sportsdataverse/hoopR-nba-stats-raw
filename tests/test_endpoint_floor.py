@@ -106,8 +106,9 @@ def test_player_tracking_endpoints_share_the_sportvu_floor() -> None:
         assert not _skip_endpoint(endpoint, 2013)
 
 
-PARKED = (
-    "playercompare",
+PARKED = ("playercompare",)
+
+DRAFTCOMBINE = (
     "draftcombinestats",
     "draftcombinedrillresults",
     "draftcombineplayeranthro",
@@ -144,12 +145,12 @@ def _floors_in_subprocess(preamble: str, endpoints: tuple[str, ...]) -> list[int
 
 
 def test_nonfunctional_endpoints_are_parked() -> None:
-    """These cannot be built correctly by a season-level sweep, and each variant
-    costs a FULL request timeout before the write guard refuses to persist it.
-
-    Measured 2026-08-01 at timeout=90s / workers=6: seasons carrying these took
-    9m18s and 7m51s and wrote 0 and 2 files (~37 failures each); seasons without
-    them ran in about a second. playercompare alone is 28 variants/season.
+    """playercompare is ENTITY-keyed: it answers when given real PlayerIDList /
+    VsPlayerIDList values (probed 2026-08-02), but a season-level sweep has no
+    player ids to supply, and its 28 variants/season each cost a full request
+    timeout (measured 2026-08-01: 9m18s / 7m51s on seasons carrying it).
+    Parked until a per-entity capture design exists -- NOT because the endpoint
+    is broken.
     """
     for floor in _floors_in_subprocess("", PARKED):
         assert floor > max(REAL_SEASONS)
@@ -166,10 +167,11 @@ def test_parked_endpoints_are_skipped_for_every_real_season(endpoint) -> None:
 
 @pytest.mark.parametrize("endpoint", PARKED)
 def test_each_parked_endpoint_is_independently_overridable(endpoint) -> None:
-    """One shared variable would be a trap: a single DRAFTCOMBINE_MIN_SEASON
-    un-parks all five draftcombine endpoints at once, so a fixed-parameter run
-    for one of them silently resumes hammering the other four with parameters
-    that are still wrong. Each reads its own <ENDPOINT>_MIN_SEASON.
+    """Every parked endpoint reads its own <ENDPOINT>_MIN_SEASON, so a
+    fixed-parameter run can re-enable exactly one. (When the five draftcombine
+    endpoints were parked, a shared variable would have un-parked all five at
+    once -- keep the per-endpoint contract even now that only playercompare
+    remains.)
     """
     var = f"{endpoint.upper()}_MIN_SEASON"
     others = tuple(e for e in PARKED if e != endpoint)
@@ -180,11 +182,21 @@ def test_each_parked_endpoint_is_independently_overridable(endpoint) -> None:
 
 
 def test_endpoints_that_do_work_are_not_parked() -> None:
-    """leaguedashptteamdefend returns real data for recent seasons and
-    teamgamelogs fails only on its Usage variants -- parking either would
-    discard genuine captures."""
-    for endpoint in ("leaguedashptteamdefend", "teamgamelogs", "playergamelogs"):
+    """leaguedashptteamdefend returns real data for recent seasons,
+    teamgamelogs fails only on its Usage variants, and the draftcombine family
+    answers with the sweep's own parameters (probed 2026-08-02) -- parking any
+    of them would discard genuine captures."""
+    for endpoint in ("leaguedashptteamdefend", "teamgamelogs", "playergamelogs") + DRAFTCOMBINE:
         assert ENDPOINT_MIN_SEASON.get(endpoint, 0) <= max(REAL_SEASONS)
+
+
+def test_draftcombine_floor_2000() -> None:
+    """The combine family answers valid zero-row envelopes for 1996-99 and real
+    tables from 2000 on (65 rows probed for 2000); the floor skips only the
+    pre-2000 waste."""
+    for endpoint in DRAFTCOMBINE:
+        assert _skip_endpoint(endpoint, 1999)
+        assert not _skip_endpoint(endpoint, 2000)
 
 
 def test_no_duplicate_endpoint_keys() -> None:
@@ -215,25 +227,16 @@ def test_no_duplicate_endpoint_keys() -> None:
     raise AssertionError("ENDPOINT_MIN_SEASON assignment not found")
 
 
-def test_ceiling_skips_after_the_last_published_season() -> None:
-    """draftcombine* published 2000-2019 and NOTHING after (archive-measured).
-    The ceiling only matters when un-parked, but it must hold then."""
-    src = (
-        "import os, sys;"
-        " [os.environ.pop(k, None) for k in list(os.environ) if k.endswith('_MIN_SEASON')];"
-        " os.environ['DRAFTCOMBINESTATS_MIN_SEASON'] = '2000';"
-        " sys.path.insert(0, 'python');"
-        " import scrape_raw_json as s;"
-        " print(s._skip_endpoint('draftcombinestats', 1999),"
-        "       s._skip_endpoint('draftcombinestats', 2000),"
-        "       s._skip_endpoint('draftcombinestats', 2019),"
-        "       s._skip_endpoint('draftcombinestats', 2020))"
-    )
-    out = subprocess.run(
-        [sys.executable, "-c", src], capture_output=True, text=True,
-        cwd=Path(__file__).resolve().parent.parent, check=True,
-    )
-    assert out.stdout.split() == ["True", "False", "False", "True"]
+def test_no_false_ceilings() -> None:
+    """ENDPOINT_MAX_SEASON must stay empty until a calm probe shows every later
+    season answering a VALID ZERO-ROW envelope. The draftcombine* 2019 ceilings
+    that used to live there were false -- probed 2026-08-02: 74/83/83 rows for
+    2021/2022/2024; the "NOTHING after 2019" reading dated from the era when
+    draftcombinestats was swept with no season parameter at all. The mechanism
+    silently discards real seasons, so an entry needs probe-dated evidence."""
+    from scrape_raw_json import ENDPOINT_MAX_SEASON
+
+    assert ENDPOINT_MAX_SEASON == {}
 
 
 def test_lineup_dashboards_floor_2007() -> None:
