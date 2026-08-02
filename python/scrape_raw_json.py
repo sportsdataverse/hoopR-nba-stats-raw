@@ -303,10 +303,10 @@ def main(argv: list[str]) -> int:
         periods_in_game,
         season_of,
     )
-    from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies
     from season_capture import capture_season, game_ids_from_gamelog, payload_path
-    from sportsdataverse.scrape.stats.session_transport import SessionTransport
     from sportsdataverse.nba.nba_possessions import _raw_store_path, _through_raw_store
+    from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies
+    from sportsdataverse.scrape.stats.session_transport import SessionTransport
 
     stats = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}")
     game_endpoints, _season_endpoints = discover(stats, STATS_PREFIX)

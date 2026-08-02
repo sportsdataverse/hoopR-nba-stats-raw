@@ -45,11 +45,11 @@ def _log(msg: str) -> None:
 def main(argv: list[str]) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-    from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies
     from season_capture import payload_path, write_payload
-    from sportsdataverse.scrape.stats.session_transport import SessionTransport
     from sportsdataverse.nba.nba_schedule import year_to_season
     from sportsdataverse.nba.nba_stats import nba_stats_leaguegamelog
+    from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies
+    from sportsdataverse.scrape.stats.session_transport import SessionTransport
 
     spec = argv[0] if argv else "1996:2026"
     lo, _, hi = spec.partition(":")
