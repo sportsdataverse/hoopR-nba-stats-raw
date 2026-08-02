@@ -47,12 +47,13 @@ which would resync the venv under a running multi-hour sweep.
   sequential (a few hundred calls/season). Refuses to persist an empty `{}`.
 - `period_capture.py` — NBA per-period request windows, delegated to sdv-py's
   `nba_lineups._period_start_range` so capture can't drift from the reader.
-- `session_transport.py` — thread-local sticky `curl_cffi` sessions, one proxy
+- `sportsdataverse.scrape.stats.session_transport` (lives in sdv-py since #325;
+  was `python/session_transport.py`) — thread-local sticky `curl_cffi` sessions, one proxy
   per session; rotates on `SESSION_MAX_REQUESTS` / `SESSION_MAX_SECS` / any
   fault; retries transient 500s in-session (`SESSION_SERVER_ERR_RETRIES`).
-- `proxy.py` — ProxyBonanza round-robin pool. `PROXY_ENDPOINT` / `PROXY_KEY` /
+- `sportsdataverse.scrape.stats.proxy` (sdv-py) — ProxyBonanza round-robin pool. `PROXY_ENDPOINT` / `PROXY_KEY` /
   `PROXY_PKG` read from env at call time; `redact()` before logging any URL.
-- `observability.py` — `Progress` heartbeat (rate + ETA every
+- `sportsdataverse.scrape.stats.observability` (sdv-py) — `Progress` heartbeat (rate + ETA every
   `HEARTBEAT_SECS`), miss classification (`endpoint_absent` / `timeout` /
   `throttled` / `error`), `ProxyHealth` quarantine, `Degradation` alerts.
   Structured fetch log: `logs/errors.jsonl`.
@@ -120,7 +121,7 @@ wrong.
   `2026` = 2025-26). Disk dirs and commit labels use it verbatim.
 - **TLS/JA3**: `stats.nba.com` blocks plain `requests` with a *silent
   timeout*, not an error — a "hang" is usually this. All traffic goes through
-  `curl_cffi` `impersonate="chrome"` (`session_transport.py`).
+  `curl_cffi` `impersonate="chrome"` (`sportsdataverse.scrape.stats.session_transport`).
 - **Rate tuning is env-only** — never hardcode pace. The knobs:
 
   | Env | Default | Meaning |

@@ -43,10 +43,10 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from proxy import ProxyHealth, RoundRobin, load_proxies
+from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies
 from scrape_raw_json import LEAGUE_ID, REPO, STATS_PREFIX, STORE_ENV, STORE_SUBDIR, _log
 from season_capture import payload_path, plan_season, write_payload
-from session_transport import SessionTransport
+from sportsdataverse.scrape.stats.session_transport import SessionTransport
 
 #: A payload this small cannot hold an envelope; anything larger is real.
 CONTENTLESS_MAX_BYTES = 2

@@ -70,7 +70,7 @@ Season encoding is the **end year** (`2026` = 2025-26).
 - **TLS fingerprinting**: `stats.nba.com` blocks plain `requests` by JA3 —
   it produces a *silent timeout*, not an error, so a "hang" is usually this.
   All traffic goes through `curl_cffi` with `impersonate="chrome"`; see
-  `python/session_transport.py`.
+  `sportsdataverse.scrape.stats.session_transport` (sdv-py; moved from `python/session_transport.py` in #325).
 - **Per-endpoint season floors** live in `ENDPOINT_MIN_SEASON` with
   `_skip_endpoint()` as the single owner of the comparison
   (`python/scrape_raw_json.py`). Add a floor there, not at a call site.
