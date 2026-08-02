@@ -12,12 +12,14 @@ from pathlib import Path
 import pytest
 from endpoints import (
     ENDPOINT_MEASURE_TYPES,
+    LEAGUE_NBA,
     LEAGUE_WNBA,
     MEASURE_TYPE_DOMAINS,
     MEASURE_TYPES,
     PER_MODES,
     SEASON_TYPES,
     discover,
+    season_string,
     season_variants,
     slug,
 )
@@ -208,7 +210,7 @@ def test_season_is_pinned_even_when_spelled_nullable() -> None:
     test the bare `season` only, so those endpoints were called with NO season
     filter and 100% of their captures came back empty in both leagues."""
     for _v, kwargs in season_variants(StubStats.stub_playergamelogs, 2025, LEAGUE_WNBA):
-        assert kwargs.get("season_nullable") == "2025"
+        assert kwargs.get("season_nullable") == "2025-26", "span string, not a bare year"
         assert "season" not in kwargs, "must not send a parameter the endpoint lacks"
 
 
@@ -226,7 +228,7 @@ def test_only_supported_axes_are_swept() -> None:
 def test_every_call_pins_season_and_league() -> None:
     for fn in (StubStats.stub_leaguedashteamstats, StubStats.stub_leaguestandingsv3):
         for _v, kwargs in season_variants(fn, 2025, LEAGUE_WNBA):
-            assert kwargs["season"] == "2025"
+            assert kwargs["season"] == "2025-26", "span string, not a bare year"
             assert kwargs["league_id"] == LEAGUE_WNBA
 
 
@@ -471,3 +473,47 @@ def test_ids_from_ignores_v3_payloads() -> None:
 def test_ids_from_tolerates_a_short_row() -> None:
     payload = {"resultSets": [{"headers": ["A", "TEAM_ID"], "rowSet": [[1], [2, 3]]}]}
     assert _ids_from(payload, "TEAM_ID") == ["3"]
+
+
+# ---------------------------------------------------------------------------
+# NBA season string. A BARE year silently returns zero rows on several
+# endpoints while others tolerate it, so the sweep looked healthy while seven
+# endpoints captured a valid envelope with no data, every season, for years.
+# ---------------------------------------------------------------------------
+
+
+def test_season_string_spans_two_years() -> None:
+    assert season_string(2023) == "2023-24"
+    assert season_string(1996) == "1996-97"
+
+
+def test_season_string_zero_pads_the_century_rollover() -> None:
+    """1999 -> "1999-00", not "1999-0" or "1999-100"."""
+    assert season_string(1999) == "1999-00"
+    assert season_string(2009) == "2009-10"
+
+
+def test_span_string_is_sent_for_the_season_parameter() -> None:
+    for _v, kwargs in season_variants(StubStats.stub_leaguedashteamstats, 2023, LEAGUE_NBA):
+        assert kwargs["season"] == "2023-24"
+
+
+def test_span_string_is_sent_for_season_nullable_too() -> None:
+    """playergamelogs/teamgamelogs spell it season_nullable and need the span
+    just as much -- measured: leaguedashptstats 0 -> 572 rows."""
+    for _v, kwargs in season_variants(StubStats.stub_playergamelogs, 2023, LEAGUE_NBA):
+        assert kwargs["season_nullable"] == "2023-24"
+
+
+def test_season_year_stays_a_bare_year() -> None:
+    """`season_year` on draftcombine* is a DRAFT year, a genuine single year.
+    Spanning it would break those endpoints."""
+
+    class DraftStub:
+        @staticmethod
+        def stub_draftcombinestats(season_year=None, league_id=None, return_parsed=True): ...
+
+    variants = list(season_variants(DraftStub.stub_draftcombinestats, 2023, LEAGUE_NBA))
+    assert variants, "expected one unparameterized capture"
+    for _v, kwargs in variants:
+        assert kwargs["season_year"] == "2023", "draft year must not be spanned"

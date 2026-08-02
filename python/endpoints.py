@@ -126,6 +126,7 @@ def measure_types_for(fn_name: str, param: str, default: tuple[str, ...]) -> tup
 #: leagues.
 _SEASON_PARAMS = ("season", "season_nullable", "season_year")
 _LEAGUE_PARAMS = ("league_id", "league_id_nullable")
+
 PER_MODES = ("Totals", "PerGame")
 
 #: Lineups are five-player units; the endpoint also accepts 2-4 but the published
@@ -143,6 +144,17 @@ _SWEEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 #: Parameters pinned to a single value when the endpoint accepts them.
 _PINS: tuple[tuple[str, Any], ...] = (("group_quantity", LINEUP_GROUP_QUANTITY),)
+
+#: Season parameters that want the NBA's two-year span string ("2023-24").
+#:
+#: `season_year` is deliberately absent: on the draftcombine* endpoints it is a
+#: DRAFT year, a genuine single year, and spanning it would break them.
+_SPAN_SEASON_PARAMS = ("season", "season_nullable")
+
+
+def season_string(season: int) -> str:
+    """The NBA's own spelling of a season: 2023 -> "2023-24", 1999 -> "1999-00"."""
+    return f"{season}-{str(season + 1)[-2:]}"
 
 
 def _params(fn: Callable[..., Any]) -> set[str]:
@@ -205,7 +217,22 @@ def season_variants(
     base: dict[str, Any] = {}
     season_param = next((p for p in _SEASON_PARAMS if p in params), None)
     if season_param:
-        base[season_param] = str(season)
+        # A BARE year silently returns zero rows on several endpoints while
+        # others tolerate it, so the sweep looked healthy while
+        # leagueleaders / leaguedashptstats / leaguedashptdefend /
+        # leaguedashteamptshot / leaguedashplayerptshot / leaguedashoppptshot
+        # captured a valid envelope with no data, every season, for years.
+        #
+        # Measured: leagueleaders 0 -> 240 rows, leaguedashptstats 0 -> 572,
+        # leaguedashptdefend 0 -> 569 once the span string is sent.
+        #
+        # Tolerant endpoints are unaffected: "2023" and "2023-24" return
+        # byte-identical rows (checked against leaguedashteamstats), so the
+        # API already reads a bare year as the START year. This only makes
+        # that explicit.
+        base[season_param] = (
+            season_string(season) if season_param in _SPAN_SEASON_PARAMS else str(season)
+        )
     league_param = next((p for p in _LEAGUE_PARAMS if p in params), None)
     if league_param:
         base[league_param] = league_id
