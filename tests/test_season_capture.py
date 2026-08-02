@@ -517,3 +517,77 @@ def test_season_year_stays_a_bare_year() -> None:
     assert variants, "expected one unparameterized capture"
     for _v, kwargs in variants:
         assert kwargs["season_year"] == "2023", "draft year must not be spanned"
+
+
+# ---------------------------------------------------------------------------
+# Sub-dimension axes (2026-08-02). synergyplaytypes/ptstats/ptdefend take a
+# REQUIRED extra axis; the sweep used to leave it at the wrapper default, so
+# the archive held 1/22, 1/12 and 1/6 of those surfaces respectively.
+# ---------------------------------------------------------------------------
+
+
+class AxisStats:
+    @staticmethod
+    def stub_synergyplaytypes(
+        season=None, season_type_all_star=None, per_mode_simple=None,
+        play_type_nullable=None, type_grouping_nullable=None,
+        league_id=None, return_parsed=True,
+    ): ...
+
+    @staticmethod
+    def stub_leaguedashptstats(
+        season=None, season_type_all_star=None, per_mode_simple=None,
+        pt_measure_type=None, league_id=None, return_parsed=True,
+    ): ...
+
+    @staticmethod
+    def stub_leaguedashptdefend(
+        season=None, season_type_all_star=None, per_mode_simple=None,
+        defense_category=None, league_id=None, return_parsed=True,
+    ): ...
+
+    @staticmethod
+    def stub_scoreboardv3(game_date=None, league_id=None, return_parsed=True): ...
+
+    @staticmethod
+    def stub_leaguegamelog(
+        season=None, season_type_all_star=None, league_id=None, return_parsed=True,
+    ): ...
+
+
+def test_synergy_sweeps_the_full_play_type_matrix() -> None:
+    v = list(season_variants(AxisStats.stub_synergyplaytypes, 2023, LEAGUE_NBA))
+    from endpoints import PLAY_TYPES, TYPE_GROUPINGS
+    assert len(v) == len(SEASON_TYPES) * len(PLAY_TYPES) * len(TYPE_GROUPINGS) * len(PER_MODES)
+    slugs = {s for s, _k in v}
+    assert "regular-season_isolation_offensive_pergame" in slugs
+    assert "playoffs_prballhandler_defensive_totals" in slugs
+
+
+def test_ptstats_sweeps_all_twelve_measures() -> None:
+    from endpoints import PT_MEASURE_TYPES
+    v = list(season_variants(AxisStats.stub_leaguedashptstats, 2023, LEAGUE_NBA))
+    assert len(v) == len(SEASON_TYPES) * len(PT_MEASURE_TYPES) * len(PER_MODES)
+    got = {k["pt_measure_type"] for _s, k in v}
+    assert got == set(PT_MEASURE_TYPES)
+
+
+def test_ptdefend_sweeps_all_six_categories() -> None:
+    from endpoints import DEFENSE_CATEGORIES
+    v = list(season_variants(AxisStats.stub_leaguedashptdefend, 2023, LEAGUE_NBA))
+    got = {k["defense_category"] for _s, k in v}
+    assert got == set(DEFENSE_CATEGORIES)
+    assert "regular-season_less-than-6ft_pergame" in {s for s, _k in v}
+
+
+def test_endpoints_without_the_axes_are_unchanged() -> None:
+    """leaguegamelog must not inherit any of the new axes."""
+    v = list(season_variants(AxisStats.stub_leaguegamelog, 2023, LEAGUE_NBA))
+    assert len(v) == len(SEASON_TYPES)
+
+
+def test_scoreboardv3_is_excluded_from_discovery() -> None:
+    """Date-keyed endpoint: sweeping it per season captured the wrapper's fixed
+    default date once per season -- junk. Excluded at the registry gate."""
+    game, season = discover(AxisStats, "stub")
+    assert "scoreboardv3" not in game and "scoreboardv3" not in season

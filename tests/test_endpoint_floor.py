@@ -213,3 +213,31 @@ def test_no_duplicate_endpoint_keys() -> None:
         assert not dupes, f"duplicate ENDPOINT_MIN_SEASON keys: {sorted(dupes)}"
         return
     raise AssertionError("ENDPOINT_MIN_SEASON assignment not found")
+
+
+def test_ceiling_skips_after_the_last_published_season() -> None:
+    """draftcombine* published 2000-2019 and NOTHING after (archive-measured).
+    The ceiling only matters when un-parked, but it must hold then."""
+    src = (
+        "import os, sys;"
+        " [os.environ.pop(k, None) for k in list(os.environ) if k.endswith('_MIN_SEASON')];"
+        " os.environ['DRAFTCOMBINESTATS_MIN_SEASON'] = '2000';"
+        " sys.path.insert(0, 'python');"
+        " import scrape_raw_json as s;"
+        " print(s._skip_endpoint('draftcombinestats', 1999),"
+        "       s._skip_endpoint('draftcombinestats', 2000),"
+        "       s._skip_endpoint('draftcombinestats', 2019),"
+        "       s._skip_endpoint('draftcombinestats', 2020))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", src], capture_output=True, text=True,
+        cwd=Path(__file__).resolve().parent.parent, check=True,
+    )
+    assert out.stdout.split() == ["True", "False", "False", "True"]
+
+
+def test_lineup_dashboards_floor_2007() -> None:
+    """Both lineup dashboards answer a valid zero-row envelope before 2007-08."""
+    for ep in ("leaguedashlineups", "leaguelineupviz"):
+        assert _skip_endpoint(ep, 2006)
+        assert not _skip_endpoint(ep, 2007)

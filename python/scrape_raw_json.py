@@ -102,6 +102,10 @@ ENDPOINT_MIN_SEASON = {
     #   GAMEROTATION_MIN_SEASON=2016 SCRAPE_WORKERS=3 SDV_PY_NBA_STATS_TIMEOUT=60 \
     #     bash scripts/backfill_nba_stats_raw.sh 2016:2026
     "gamerotation": _parked("gamerotation"),
+    # Rows-measured floors (archive scan 2026-08-02): both lineup dashboards
+    # answer with a valid zero-row envelope for every season before 2007-08.
+    "leaguedashlineups": 2007,
+    "leaguelineupviz": 2007,
     "boxscorematchupsv3": 2017,  # probed: empty <=2016, populates 2017-18
     "boxscoredefensivev2": 2017,  # probed: empty <=2016, populates 2017-18
     # --- PARKED: known-nonfunctional with the parameters this sweep can build.
@@ -130,11 +134,10 @@ ENDPOINT_MIN_SEASON = {
     #                   than the shared _PT one. Parking it would discard real
     #                   captures; 4 variants/season is a tolerable cost until
     #                   the floor is probed.
-    #   teamgamelogs    only its Usage variants fail. MEASURE_TYPE_DOMAINS is
-    #                   keyed by parameter name, and playergamelogs shares
-    #                   `measure_type_player_game_logs_nullable` while ACCEPTING
-    #                   Usage -- so the domain cannot separate them. Needs a
-    #                   per-endpoint override, not a domain edit.
+    #   teamgamelogs    fully solved by the span season string (2,460 rows
+    #                   measured); its Usage variant returns {} even with valid
+    #                   params (both leagues), so ENDPOINT_MEASURE_TYPES in
+    #                   endpoints.py excludes Usage for it.
     "playercompare": _parked("playercompare"),
     "draftcombinestats": _parked("draftcombinestats"),
     "draftcombinedrillresults": _parked("draftcombinedrillresults"),
@@ -166,6 +169,19 @@ ENDPOINT_MIN_SEASON = {
 # tests/test_endpoint_floor.py::test_no_duplicate_endpoint_keys parses the AST.
 
 
+#: Season CEILINGS -- the archive shows these stop publishing entirely after
+#: the listed season (draftcombine* is 2000-2019: answers-but-empty before
+#: 2000 and NOTHING after 2019). Only consulted by _skip_endpoint; irrelevant
+#: while an endpoint is parked, load-bearing the moment it is un-parked.
+ENDPOINT_MAX_SEASON = {
+    "draftcombinestats": 2019,
+    "draftcombinedrillresults": 2019,
+    "draftcombineplayeranthro": 2019,
+    "draftcombinespotshooting": 2019,
+    "draftcombinenonstationaryshooting": 2019,
+}
+
+
 def _skip_endpoint(endpoint: str, season: int) -> bool:
     """True when `endpoint` has no data for `season`, so the call is skipped.
 
@@ -176,7 +192,9 @@ def _skip_endpoint(endpoint: str, season: int) -> bool:
     over-skip (4ec4c143a4) happened. An endpoint absent from the table has no
     floor and is never skipped.
     """
-    return season < ENDPOINT_MIN_SEASON.get(endpoint, 0)
+    if season < ENDPOINT_MIN_SEASON.get(endpoint, 0):
+        return True
+    return season > ENDPOINT_MAX_SEASON.get(endpoint, 9999)
 
 
 def _log(msg: str) -> None:

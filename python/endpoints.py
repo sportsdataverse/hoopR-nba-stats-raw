@@ -129,6 +129,58 @@ _LEAGUE_PARAMS = ("league_id", "league_id_nullable")
 
 PER_MODES = ("Totals", "PerGame")
 
+#: Sub-dimension axes. These endpoints take a REQUIRED extra axis; before
+#: 2026-08-02 the sweep left each at its wrapper default, so the archive held
+#: one slice of a much larger surface: synergyplaytypes = Isolation/Offensive
+#: only (1 of 22), leaguedashptstats = Drives only (1 of 12), leaguedashptdefend
+#: = Overall only (1 of 6). Values from nba_api parameters.py (PtMeasureType /
+#: DefenseCategory / PlayType classes) -- the API's own domain model.
+PT_MEASURE_TYPES = (
+    "SpeedDistance",
+    "Rebounding",
+    "Possessions",
+    "CatchShoot",
+    "PullUpShot",
+    "Defense",
+    "Drives",
+    "Passing",
+    "ElbowTouch",
+    "PostTouch",
+    "PaintTouch",
+    "Efficiency",
+)
+DEFENSE_CATEGORIES = (
+    "Overall",
+    "3 Pointers",
+    "2 Pointers",
+    "Less Than 6Ft",
+    "Less Than 10Ft",
+    "Greater Than 15Ft",
+)
+#: Synergy spellings are the API's own: PRBallHandler / PRRollman, and
+#: putbacks are "OffRebound".
+PLAY_TYPES = (
+    "Transition",
+    "Isolation",
+    "PRBallHandler",
+    "PRRollman",
+    "Postup",
+    "Spotup",
+    "Handoff",
+    "Cut",
+    "OffScreen",
+    "OffRebound",
+    "Misc",
+)
+TYPE_GROUPINGS = ("Offensive", "Defensive")
+
+#: Season-level endpoints that must never be swept per-season.
+#: scoreboardv3 is DATE-keyed (GameDate=YYYY-MM-DD); sweeping it per season
+#: captured the wrapper's fixed default date over and over -- one junk file per
+#: season. Its content (the day's games) is fully covered by the per-game
+#: endpoints. Excluded in discover(), the single registry gate.
+EXCLUDED_SEASON_ENDPOINTS = frozenset({"scoreboardv3"})
+
 #: Lineups are five-player units; the endpoint also accepts 2-4 but the published
 #: datasets are 5-man and the smaller units are a much larger combinatorial space.
 LINEUP_GROUP_QUANTITY = 5
@@ -139,6 +191,10 @@ LINEUP_GROUP_QUANTITY = 5
 _SWEEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("season_type", SEASON_TYPES),
     ("measure_type", MEASURE_TYPES),
+    ("pt_measure_type", PT_MEASURE_TYPES),
+    ("defense_category", DEFENSE_CATEGORIES),
+    ("play_type", PLAY_TYPES),
+    ("type_grouping", TYPE_GROUPINGS),
     ("per_mode", PER_MODES),
 )
 
@@ -195,6 +251,8 @@ def discover(module: Any, prefix: str) -> tuple[list[str], list[str]]:
         if not params:
             continue
         short = name[len(prefix) + 1 :]
+        if short in EXCLUDED_SEASON_ENDPOINTS:
+            continue
         if "game_id" in params:
             game.append(short)
         elif "team_id" in params or "player_id" in params:
