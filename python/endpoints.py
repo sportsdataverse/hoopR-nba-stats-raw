@@ -179,7 +179,11 @@ TYPE_GROUPINGS = ("Offensive", "Defensive")
 #: captured the wrapper's fixed default date over and over -- one junk file per
 #: season. Its content (the day's games) is fully covered by the per-game
 #: endpoints. Excluded in discover(), the single registry gate.
-EXCLUDED_SEASON_ENDPOINTS = frozenset({"scoreboardv3"})
+#: shotchartlineupdetail is LINEUP-keyed: it requires a GroupID (a 5-man
+#: lineup id) and the roxygen-mined default pinned one specific lineup, so
+#: every "season" capture was one lineup's shots. A season sweep cannot
+#: enumerate lineups; per-lineup capture is an entity-iteration design.
+EXCLUDED_SEASON_ENDPOINTS = frozenset({"scoreboardv3", "shotchartlineupdetail"})
 
 #: Lineups are five-player units; the endpoint also accepts 2-4 but the published
 #: datasets are 5-man and the smaller units are a much larger combinatorial space.
