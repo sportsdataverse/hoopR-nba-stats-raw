@@ -241,3 +241,12 @@ def test_lineup_dashboards_floor_2007() -> None:
     for ep in ("leaguedashlineups", "leaguelineupviz"):
         assert _skip_endpoint(ep, 2006)
         assert not _skip_endpoint(ep, 2007)
+
+
+def test_game_log_family_floor_2014() -> None:
+    """Post-defaults-fix census: playergamelogs 3.29M rows and teamgamelogs
+    247k rows both start 2014 (tracking-era game logs). Pre-2014 the API
+    answers contentless; the floor stops re-asking every sweep."""
+    for ep in ("playergamelogs", "teamgamelogs"):
+        assert _skip_endpoint(ep, 2013)
+        assert not _skip_endpoint(ep, 2014)
