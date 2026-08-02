@@ -10,8 +10,14 @@
 # commit_raw_json.sh is idempotent and commits one season at a time, so running it
 # on a timer produces exactly one commit per season as each finishes.
 #
-#   bash scripts/commit_loop.sh            # every 5 min until the sweep stops
-#   INTERVAL=120 bash scripts/commit_loop.sh
+#   bash scripts/commit_loop.sh <watch_pid>   # until that process exits
+#   INTERVAL=120 bash scripts/commit_loop.sh <watch_pid>
+#
+# <watch_pid> is the process to follow -- normally the launcher's own $$, since
+# run_backfill.sh knows exactly when its sweep ends. Without it the loop falls
+# back to `pgrep -f scrape_raw_json`, which does NOT work under Git Bash on
+# Windows: pgrep cannot see native python.exe command lines, so it reported
+# "not running" mid-sweep and the loop exited after a single pass. Pass the pid.
 #
 # Safe alongside the scraper: payloads are written atomically (tmp + rename) and
 # *.json.tmp is gitignored, so a commit can never catch a half-written file.
@@ -28,11 +34,23 @@ mkdir -p "$(dirname "$LOG")"
 
 log() { echo "[$(date -u '+%F %TZ')] $*" >> "$LOG"; }
 
-log "commit loop started (interval ${INTERVAL}s)"
+WATCH_PID="${1:-}"
+
+# Watching an explicit pid keeps this portable: `kill -0` works anywhere, while
+# scanning for the python process does not (see the note above).
+_sweep_running() {
+    if [ -n "$WATCH_PID" ]; then
+        kill -0 "$WATCH_PID" 2>/dev/null
+        return $?
+    fi
+    pgrep -f "scrape_raw[_]json" > /dev/null 2>&1
+}
+
+log "commit loop started (interval ${INTERVAL}s, watching ${WATCH_PID:-<pgrep>})"
 while true; do
     bash scripts/commit_raw_json.sh >> "$LOG" 2>&1 || log "commit pass failed (will retry)"
 
-    if ! pgrep -f "scrape_raw[_]json" > /dev/null 2>&1; then
+    if ! _sweep_running; then
         # One more pass after the sweep ends, so the final season is never stranded.
         sleep 10
         bash scripts/commit_raw_json.sh >> "$LOG" 2>&1 || log "final commit pass failed"

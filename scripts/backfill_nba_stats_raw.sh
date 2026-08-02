@@ -52,6 +52,16 @@ mkdir -p logs
 LOG="logs/nba_stats_raw_backfill_$(date +%Y%m%d_%H%M%S).log"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] START seasons=$SEASONS workers=$SCRAPE_WORKERS log=$LOG" | tee -a "$LOG"
+# Commit as the sweep runs. Nothing here used to commit at all, so a multi-hour
+# backfill left every captured payload untracked -- a crashed box would have
+# lost work that cost real requests against a shared stats-host budget.
+#
+# It watches THIS script's pid, which is also why the preflight-failure exit
+# below needs no cleanup: when this shell goes, the loop's `kill -0` fails, it
+# runs one final pass and exits on its own.
+bash scripts/commit_loop.sh $$ >> "$LOG" 2>&1 &
+COMMIT_LOOP_PID=$!
+
 # --check first: sizes the sweep + verifies the proxy pool without fetching.
 # Its status was previously discarded, so a run with no proxies sailed past the
 # preflight into a sweep that could only hang. Note `set -e` would NOT catch
@@ -67,5 +77,10 @@ fi
 
 "$PYBIN" python/scrape_raw_json.py "$SEASONS" 2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}
+# Stop the loop and flush whatever the last pass missed, so the final season is
+# never stranded.
+kill "$COMMIT_LOOP_PID" 2>/dev/null
+wait "$COMMIT_LOOP_PID" 2>/dev/null
+bash scripts/commit_raw_json.sh >> "$LOG" 2>&1 || echo "final commit pass failed" | tee -a "$LOG"
 echo "EXIT=$rc" | tee -a "$LOG"   # grep-able completion marker
 exit "$rc"
