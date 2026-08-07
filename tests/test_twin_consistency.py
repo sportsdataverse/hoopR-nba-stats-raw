@@ -24,12 +24,22 @@ difference.
 
 2. **Transport wiring.** ``scrape_raw_json.py``'s own module docstring states
    the contract: ``SessionTransport`` "owns proxy selection ... so the fetch
-   closures pass no proxy_url" -- every live fetch call must route through
-   ``transport=session_transport``, never a raw ``proxy_url=rr.next()`` that
-   bypasses health recording and the sticky JA3 session. A real regression of
-   exactly this kind (one leftover pre-migration call site, in the per-period
-   boxscore closure) shipped in one twin and not the other; this guards it in
-   both going forward.
+   closures pass no proxy_url" -- every live fetch call, in EVERY script under
+   ``python/``, must route through ``transport=...``, never a raw
+   ``proxy_url=rr.next()`` that bypasses health recording and the sticky JA3
+   session. Two real regressions of exactly this kind have shipped: one
+   leftover pre-migration call site in ``scrape_raw_json.py``'s per-period
+   boxscore closure, and a second in ``backfill_leaguegamelog_player.py``
+   masked by a bare ``except ImportError: return None`` around a cross-repo
+   import (see 3). The first check used to scan only ``scrape_raw_json.py``;
+   that narrow scope is exactly how the second one survived, so it now scans
+   every script.
+
+3. **No cross-repo import.** A ``-raw`` script importing ``nba_data_build`` /
+   ``wnba_data_build`` -- the sibling ``-data`` repo's package -- is not
+   installed here and cannot resolve; the only way it "worked" before was by
+   silently swallowing the ``ImportError`` and disabling whatever depended on
+   it. That should never typecheck as correct again.
 """
 
 from __future__ import annotations
@@ -75,7 +85,9 @@ def test_layout_is_discoverable() -> None:
     vacuously without having checked anything."""
     assert _expected_league()
     literals = _league_id_literals()
-    assert literals, 'no `LEAGUE_ID = "..."` literal found under python/ -- did the binding pattern move?'
+    assert literals, (
+        'no `LEAGUE_ID = "..."` literal found under python/ -- did the binding pattern move?'
+    )
 
 
 def test_league_id_literals_match_this_repo() -> None:
@@ -97,7 +109,9 @@ def test_refill_empty_binds_the_right_league_config() -> None:
     not exist for this league)."""
     expected = _expected_league()
     source = (PYTHON / "refill_empty.py").read_text(encoding="utf-8")
-    imported = re.findall(r"from sportsdataverse\.scrape\.stats\.league_config import (\w+)", source)
+    imported = re.findall(
+        r"from sportsdataverse\.scrape\.stats\.league_config import (\w+)", source
+    )
     assert imported, "refill_empty.py must import its LeagueConfig from league_config"
     assert imported == [expected.key.upper()], (
         f"refill_empty.py imports {imported}, expected [{expected.key.upper()!r}]"
@@ -107,32 +121,69 @@ def test_refill_empty_binds_the_right_league_config() -> None:
     )
 
 
-def _proxy_url_call_sites(source: str) -> list[int]:
-    """Line numbers of any ``proxy_url=`` keyword argument in a call."""
+def _all_python_sources() -> dict[Path, str]:
+    return {path: path.read_text(encoding="utf-8") for path in sorted(PYTHON.glob("*.py"))}
+
+
+def _call_sites_with_kwarg(source: str, kwarg: str) -> list[int]:
+    """Line numbers of any call passing the keyword argument ``kwarg``."""
     tree = ast.parse(source)
     return [
         node.lineno
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         for kw in node.keywords
-        if kw.arg == "proxy_url"
+        if kw.arg == kwarg
     ]
 
 
-def test_scraper_never_bypasses_the_session_transport() -> None:
+def test_no_script_bypasses_the_session_transport() -> None:
     """SessionTransport's whole point is to own proxy selection + health
     recording; a stray ``proxy_url=`` call site skips both silently (the
     request still succeeds, it just isn't tracked or session-reused).
 
-    This is the regression guard for the twin-audit finding: one closure in
-    this file still called ``proxy_url=rr.next()`` after the rest of the file
-    had moved to ``transport=session_transport``.
+    Scans every ``python/*.py``, not just ``scrape_raw_json.py`` -- that
+    narrower scope is exactly how a second bypass (in
+    ``backfill_leaguegamelog_player.py``) survived the first version of this
+    check. One closure called ``proxy_url=rr.next()`` after the rest of
+    ``scrape_raw_json.py`` had moved to ``transport=``; the other built its
+    own ``RoundRobin`` and called ``proxy_url=provider()`` because the
+    provider it meant to build (a ``SessionTransport``) came from an import
+    that silently failed (see ``test_no_script_imports_the_data_repo_package``).
     """
-    source = (PYTHON / "scrape_raw_json.py").read_text(encoding="utf-8")
-    sites = _proxy_url_call_sites(source)
-    assert not sites, (
-        f"scrape_raw_json.py passes proxy_url= directly at line(s) {sites} -- use transport=session_transport instead"
+    offenders = {
+        str(path.relative_to(REPO)): sites
+        for path, source in _all_python_sources().items()
+        if (sites := _call_sites_with_kwarg(source, "proxy_url"))
+    }
+    assert not offenders, (
+        f"proxy_url= passed directly (bypasses SessionTransport's health "
+        f"recording + session reuse): {offenders} -- use transport=... instead"
     )
-    assert "transport=session_transport" in source, (
-        "expected at least one transport=session_transport call site -- did the wiring change shape?"
+    transport_users = [
+        str(path.relative_to(REPO))
+        for path, source in _all_python_sources().items()
+        if _call_sites_with_kwarg(source, "transport")
+    ]
+    assert transport_users, (
+        "expected at least one python/*.py call site to pass transport=... -- "
+        "did the wiring change shape?"
     )
+
+
+def test_no_script_imports_the_data_repo_package() -> None:
+    """A ``-raw`` script importing ``nba_data_build`` / ``wnba_data_build`` --
+    either league, since the wrong one is just as broken as the sibling's own
+    -- reaches into the ``-data`` repo's package. It is not a dependency of
+    this repo and cannot resolve here.
+
+    This is the root cause of the twin-audit finding above: a bare
+    ``except ImportError: return None`` around exactly this import masked the
+    failure as "no proxies configured" instead of "this import cannot work".
+    """
+    offenders = {
+        str(path.relative_to(REPO)): sorted(set(hits))
+        for path, source in _all_python_sources().items()
+        if (hits := re.findall(r"^\s*(?:from|import)\s+(\w*_data_build)\b", source, re.MULTILINE))
+    }
+    assert not offenders, f"-raw scripts must not import the -data repo's package: {offenders}"
