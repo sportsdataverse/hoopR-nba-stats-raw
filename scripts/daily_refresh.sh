@@ -37,8 +37,25 @@ LOG="$REPO/logs/daily_refresh_$(date -u +%Y%m%d).log"
     echo "[$(date -u '+%F %T')Z] scrape failed (rc=$scrape_rc); not committing"
     exit "$scrape_rc"
   fi
+  # Stage 99 (spec D16): rebuild the schedule master + coverage index LAST, so
+  # it sees everything this run captured. Non-fatal: a master failure must not
+  # keep the day's payloads from being committed.
+  "$PY" python/nba_stats_99_schedule_master_creation.py
+  master_rc=$?
+  [ "$master_rc" -ne 0 ] && echo "[$(date -u '+%F %T')Z] schedule master failed (rc=$master_rc)"
   bash scripts/commit_raw_json.sh
   commit_rc=$?
-  echo "[$(date -u '+%F %T')Z] daily refresh done (scrape=$scrape_rc commit=$commit_rc)"
+  # The master artifacts live beside the json tree, which commit_raw_json.sh
+  # deliberately does not stage — commit them separately, only when changed.
+  if [ "$master_rc" -eq 0 ]; then
+    git add -- nba_stats/nba_stats_schedule_master.parquet \
+               nba_stats/nba_stats_schedule_coverage.parquet \
+               nba_stats/nba_stats_endpoint_coverage.parquet 2>/dev/null
+    git diff --cached --quiet || {
+      git commit -m "chore(schedule): refresh schedule master + coverage index"
+      git push origin main
+    }
+  fi
+  echo "[$(date -u '+%F %T')Z] daily refresh done (scrape=$scrape_rc master=$master_rc commit=$commit_rc)"
   exit "$commit_rc"
 } >> "$LOG" 2>&1
