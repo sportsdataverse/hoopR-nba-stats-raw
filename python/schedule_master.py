@@ -1,4 +1,4 @@
-"""Schedule master + coverage index for the stats.nba.com raw archive (spec §5).
+"""Schedule master + coverage index for the stats.nba.com raw archive (spec §7).
 
 The universe of games comes from the ``leaguegamelog`` payloads already in the
 tree (the most complete per-season schedule source here — recorded as the
