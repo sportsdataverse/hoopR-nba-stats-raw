@@ -36,6 +36,12 @@ pool instead of hanging).
 Seasons on the CLI are plain calendar years: ``2024`` or ``1997:2026``.
 ``--check`` sizes the sweep and verifies the proxy pool without fetching anything.
 
+``--game-ids=FILE`` captures a named list of game ids instead (one per line,
+seasons derived from the ids, season-level pass skipped). Needed because game
+discovery reads ``leaguegamelog``, which indexes regular season + playoffs only:
+preseason (``001``), All-Star (``003``), play-in (``005``) and NBA Cup final
+(``006``) games are invisible to the season sweep however often it is rerun.
+
 Run with this repo's own venv (``pyproject.toml`` + ``uv.lock`` pin
 sportsdataverse + curl_cffi; the bash entry points resolve it by sourcing
 ``scripts/_venv.sh``):
@@ -283,8 +289,12 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 2
     check_only = "--check" in argv
+    ids_file = next(
+        (a.split("=", 1)[1] for a in argv if a.startswith("--game-ids=")),
+        None,
+    )
     argv = [a for a in argv if not a.startswith("--")]
-    if not argv:
+    if not argv and ids_file is None:
         print(__doc__, file=sys.stderr)
         return 2
 
@@ -310,16 +320,41 @@ def main(argv: list[str]) -> int:
 
     stats = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}")
     game_endpoints, _season_endpoints = discover(stats, STATS_PREFIX)
-    seasons = _parse_seasons(argv[0])
+
+    # --game-ids swaps the game universe only. leaguegamelog indexes regular
+    # season + playoffs and nothing else, so preseason / All-Star / play-in /
+    # NBA Cup games are unreachable by the season sweep no matter how often it
+    # is rerun; they have to be named. Everything downstream (skip-as-present,
+    # per-endpoint floors, period capture, proxy rotation) is unchanged.
+    targeted: dict[int, list[str]] = {}
+    if ids_file is not None:
+        for line in Path(ids_file).read_text(encoding="utf-8").splitlines():
+            gid = line.strip()
+            if gid:
+                targeted.setdefault(season_of(gid), []).append(gid)
+        # An empty / all-blank file otherwise reached the summary log with no
+        # seasons and died on seasons[0] -- an IndexError traceback in place of
+        # the usage error this actually is.
+        if not targeted:
+            print(f"no game ids in {ids_file}", file=sys.stderr)
+            return 2
+    seasons = sorted(targeted) if ids_file is not None else _parse_seasons(argv[0])
 
     pool = load_proxies()
     counts = plan_counts(stats, STATS_PREFIX, LEAGUE_ID)
     _log(f"{LEAGUE_SLUG.upper()} store: {store}")
-    _log(
-        f"{len(seasons)} seasons | {counts['game_endpoints']} game endpoints"
-        f" | {counts['season_endpoints']} season endpoints"
-        f" ({counts['season_calls_per_season']} calls/season) | workers={WORKERS}"
-    )
+    if ids_file is not None:
+        _log(
+            f"targeted mode: {sum(len(v) for v in targeted.values())} game ids"
+            f" over {len(seasons)} seasons ({seasons[0]}..{seasons[-1]})"
+            f" | {counts['game_endpoints']} game endpoints | workers={WORKERS}"
+        )
+    else:
+        _log(
+            f"{len(seasons)} seasons | {counts['game_endpoints']} game endpoints"
+            f" | {counts['season_endpoints']} season endpoints"
+            f" ({counts['season_calls_per_season']} calls/season) | workers={WORKERS}"
+        )
     if not pool:
         _log(
             "ERROR: no proxies. Un-proxied stats.%s.com calls hang rather than fail;"
@@ -447,25 +482,29 @@ def main(argv: list[str]) -> int:
 
     grand_fetched = grand_failed = 0
     for season in seasons:
-        # Season-level first: cheap, and it persists leaguegamelog, which the
-        # per-game pass then reads for its index instead of re-fetching it.
-        skip_season_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, season)}
-        s_written, s_skipped, s_failed = capture_season(
-            season,
-            store,
-            _season_fetch,
-            stats,
-            STATS_PREFIX,
-            LEAGUE_ID,
-            _log,
-            skip_endpoints=skip_season_eps,
-        )
-        _log(
-            f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed"
-        )
-
         gids: set[str] = set()
-        for stype in SEASON_TYPES:
+        if ids_file is not None:
+            gids.update(targeted[season])
+            _log(f"season {season}: {len(gids)} targeted ids (season-level pass skipped)")
+        else:
+            # Season-level first: cheap, and it persists leaguegamelog, which the
+            # per-game pass then reads for its index instead of re-fetching it.
+            skip_season_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, season)}
+            s_written, s_skipped, s_failed = capture_season(
+                season,
+                store,
+                _season_fetch,
+                stats,
+                STATS_PREFIX,
+                LEAGUE_ID,
+                _log,
+                skip_endpoints=skip_season_eps,
+            )
+            _log(
+                f"season {season}: season-level | {s_written} written | {s_skipped} present | {s_failed} failed"
+            )
+
+        for stype in () if ids_file is not None else SEASON_TYPES:
             path = payload_path(store, "leaguegamelog", season, None)
             variant = stype.lower().replace(" ", "-")
             for candidate in (

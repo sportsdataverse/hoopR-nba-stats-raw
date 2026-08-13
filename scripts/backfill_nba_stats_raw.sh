@@ -10,12 +10,23 @@
 #   bash scripts/backfill_nba_stats_raw.sh 2010:2026  # a sub-range
 #   SCRAPE_WORKERS=4 bash scripts/backfill_nba_stats_raw.sh   # gentler pace
 #
+# A named game-id list works in place of a season range -- the only way to reach
+# preseason / All-Star / play-in / NBA Cup games, which leaguegamelog (and so the
+# season sweep's discovery) never indexes:
+#
+#   bash scripts/backfill_nba_stats_raw.sh --game-ids=/path/to/ids.txt
+#
+# COMMIT_LOOP=0 suppresses the commit+push loop (default 1). Required for any run
+# whose captures are not meant to reach origin/main yet.
+#
 # Watch live from another terminal (Git Bash):
 #   tail -f "$(ls -t logs/nba_stats_raw_backfill_*.log | head -1)"
 # or PowerShell:
 #   Get-Content -Path (Get-ChildItem logs\nba_stats_raw_backfill_*.log | Sort LastWriteTime -Desc | Select -First 1).FullName -Tail 5 -Wait
 set -uo pipefail
 
+# Either a season range or a --game-ids=FILE list; both are passed straight
+# through to the scraper, which decides the game universe from whichever it got.
 SEASONS="${1:-1996:2026}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || { echo "FATAL: cannot cd to repo $REPO" >&2; exit 1; }
@@ -59,8 +70,14 @@ echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] START seasons=$SEASONS workers=$SCRAPE_WO
 # It watches THIS script's pid, which is also why the preflight-failure exit
 # below needs no cleanup: when this shell goes, the loop's `kill -0` fails, it
 # runs one final pass and exits on its own.
-bash scripts/commit_loop.sh $$ >> "$LOG" 2>&1 &
-COMMIT_LOOP_PID=$!
+COMMIT_LOOP="${COMMIT_LOOP:-1}"
+COMMIT_LOOP_PID=""
+if [ "$COMMIT_LOOP" = "1" ]; then
+  bash scripts/commit_loop.sh $$ >> "$LOG" 2>&1 &
+  COMMIT_LOOP_PID=$!
+else
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] COMMIT_LOOP=0: captures stay uncommitted (no push)" | tee -a "$LOG"
+fi
 
 # --check first: sizes the sweep + verifies the proxy pool without fetching.
 # Its status was previously discarded, so a run with no proxies sailed past the
@@ -79,8 +96,10 @@ fi
 rc=${PIPESTATUS[0]}
 # Stop the loop and flush whatever the last pass missed, so the final season is
 # never stranded.
-kill "$COMMIT_LOOP_PID" 2>/dev/null
-wait "$COMMIT_LOOP_PID" 2>/dev/null
-bash scripts/commit_raw_json.sh >> "$LOG" 2>&1 || echo "final commit pass failed" | tee -a "$LOG"
+if [ -n "$COMMIT_LOOP_PID" ]; then
+  kill "$COMMIT_LOOP_PID" 2>/dev/null
+  wait "$COMMIT_LOOP_PID" 2>/dev/null
+  bash scripts/commit_raw_json.sh >> "$LOG" 2>&1 || echo "final commit pass failed" | tee -a "$LOG"
+fi
 echo "EXIT=$rc" | tee -a "$LOG"   # grep-able completion marker
 exit "$rc"
