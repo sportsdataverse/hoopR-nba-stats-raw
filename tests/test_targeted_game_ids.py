@@ -77,6 +77,17 @@ def test_blank_lines_do_not_become_game_ids(tmp_path: Path) -> None:
     assert "targeted mode: 2 game ids" in r.stdout, r.stdout[-600:]
 
 
+def test_an_all_blank_ids_file_is_a_usage_error_not_a_traceback(tmp_path: Path) -> None:
+    """No ids means no work; it used to reach the summary log and die on seasons[0]."""
+    ids = tmp_path / "ids.txt"
+    ids.write_text("\n  \n\n", encoding="utf-8")
+
+    r = _run(f"--game-ids={ids}")
+
+    assert r.returncode == 2, f"expected the usage error (2), got {r.returncode}"
+    assert "IndexError" not in r.stderr, r.stderr[-600:]
+
+
 def test_a_bare_season_range_still_works(tmp_path: Path) -> None:
     """The season sweep must be untouched by the new flag."""
     r = _run("2024")

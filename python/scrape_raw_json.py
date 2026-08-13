@@ -332,6 +332,12 @@ def main(argv: list[str]) -> int:
             gid = line.strip()
             if gid:
                 targeted.setdefault(season_of(gid), []).append(gid)
+        # An empty / all-blank file otherwise reached the summary log with no
+        # seasons and died on seasons[0] -- an IndexError traceback in place of
+        # the usage error this actually is.
+        if not targeted:
+            print(f"no game ids in {ids_file}", file=sys.stderr)
+            return 2
     seasons = sorted(targeted) if ids_file is not None else _parse_seasons(argv[0])
 
     pool = load_proxies()
