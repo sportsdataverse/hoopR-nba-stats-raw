@@ -27,6 +27,9 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
 # shellcheck source=scripts/_venv.sh
 . "$REPO/scripts/_venv.sh"
+# The resolver's last-resort ambient-python fallback is only safe with this
+# check -- see sdv_preflight in scripts/_venv.sh.
+sdv_preflight sportsdataverse.scrape.stats curl_cffi
 
 LOG="$REPO/logs/refill_empty.log"
 mkdir -p "$REPO/logs"

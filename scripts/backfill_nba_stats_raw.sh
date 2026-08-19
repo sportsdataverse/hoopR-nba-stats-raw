@@ -36,6 +36,9 @@ cd "$REPO" || { echo "FATAL: cannot cd to repo $REPO" >&2; exit 1; }
 # shellcheck source=scripts/_venv.sh
 . "$REPO/scripts/_venv.sh"
 PYBIN="$SDV_PY"
+# The resolver's last-resort ambient-python fallback is only safe with this
+# check -- see sdv_preflight in scripts/_venv.sh.
+sdv_preflight sportsdataverse.scrape.stats curl_cffi
 
 # Proxies are REQUIRED and live in ~/.Renviron (R loads it; Python does not).
 # Export the three PROXY_* vars without echoing their values.

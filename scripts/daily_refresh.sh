@@ -16,18 +16,25 @@
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck source=scripts/_venv.sh
-. "$REPO/scripts/_venv.sh"
-PY="$SDV_PY"
 . "$HOME/.config/sdv/env" 2>/dev/null || true
 
 m=$(date -u +%m); y=$(date -u +%Y)
 season=$(( 10#$m >= 10 ? y + 1 : y ))
+mkdir -p "$REPO/logs"
 LOG="$REPO/logs/daily_refresh_$(date -u +%Y%m%d).log"
 
 {
   echo "[$(date -u '+%F %T')Z] daily refresh start: NBA season=$season"
   cd "$REPO" || exit 1
+  # Interpreter resolution runs INSIDE this block deliberately. Sourced above,
+  # a resolver FATAL fires before $LOG is ever opened, leaving an empty logs/
+  # that reads as "the job never ran" -- which is exactly how the twin repo's
+  # 2026-08 outage stayed invisible for two weeks.
+  # shellcheck source=scripts/_venv.sh
+  . "$REPO/scripts/_venv.sh"
+  PY="$SDV_PY"
+  echo "[$(date -u '+%F %T')Z] interpreter: $PY"
+  sdv_preflight sportsdataverse.scrape.stats curl_cffi
   SCRAPE_WORKERS="${SCRAPE_WORKERS:-4}" "$PY" python/scrape_raw_json.py "$season"
   scrape_rc=$?
   # The commit used to run unconditionally, so a failed sweep still published a

@@ -21,6 +21,9 @@ NBA_VENV_PYTHON="${SWEEP_PY:-${NBA_VENV_PYTHON:-}}"
 # shellcheck source=scripts/_venv.sh
 . "$REPO/scripts/_venv.sh"
 PY="$SDV_PY"
+# The resolver's last-resort ambient-python fallback is only safe with this
+# check -- see sdv_preflight in scripts/_venv.sh.
+sdv_preflight sportsdataverse.scrape.stats curl_cffi
 SEASONS="${1:-1996:2025}"
 MAX_RESTARTS="${MAX_RESTARTS:-6}"
 WD="$REPO/logs/watchdog_$(date -u +%Y%m%d_%H%M%S).log"
