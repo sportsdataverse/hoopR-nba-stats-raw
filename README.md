@@ -64,7 +64,7 @@ Watch a running job live:
 
 ```sh
 tail -f "$(ls -t logs/nba_stats_raw_backfill_*.log | head -1)"   # backfill
-tail -f logs/refill_empty.log                                    # repair
+tail -f logs/nba_stats_03_refill_empty.log                                    # repair
 tail -f "$(ls -t logs/watchdog_*.log | head -1)"                 # supervisor
 ```
 

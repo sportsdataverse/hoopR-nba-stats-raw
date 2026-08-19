@@ -22,6 +22,29 @@ Stage 30 is **advisory**: the master is a claim *about* the payloads, so a
 failure there does not stop stage 40 from committing the payloads themselves.
 Every other stage stops the chain on failure.
 
+### Python stages (`python/`)
+
+The shell stages above are the pipeline's *steps*; these are the numbered
+Python entry points they invoke. The directory listing IS the enumeration —
+same convention as the `-data` siblings' `nba_stats_NN_*_creation.py`.
+
+| # | Module | Does | Invoked by |
+|---|---|---|---|
+| 01 | `nba_stats_01_raw_json_scrape.py` | The sweep: discovery, season-level and per-game captures | `10_sweep.sh`, and `00_preflight.sh` via `--check` |
+| 02 | `nba_stats_02_leaguegamelog_player_topup.py` | PLAYER variant of `leaguegamelog`, landing additively beside the sweep's team rows | **no mode** — run manually |
+| 03 | `nba_stats_03_refill_empty.py` | Census + refill of payloads persisted as empty `{}` | `20_refill_empty.sh` |
+| 99 | `nba_stats_99_schedule_master_creation.py` | Schedule master + coverage index | `30_schedule_master.sh` |
+
+The numbers are **intended build order, not run order** — 02 is a real stage
+that no mode currently lists, and that is deliberate rather than an omission.
+A retired stage leaves a HOLE; successors are never renumbered, because the
+numbers mean the same thing across the twin repos.
+
+Unnumbered modules beside them are **import seams**, not stages: `endpoints.py`,
+`period_capture.py`, `season_capture.py` re-export the shared engine from
+sdv-py, and `schedule_master.py` holds the logic that stage 99 is a thin entry
+point over.
+
 ## Modes
 
 | Mode | Seasons default | Stages | Workers |

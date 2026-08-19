@@ -7,15 +7,15 @@ background and the safety contract.
 
 Usage
 -----
-    python python/refill_empty.py --check          # census only, no network
-    python python/refill_empty.py                  # refill everything
-    python python/refill_empty.py 2015:2026        # season range
-    python python/refill_empty.py --endpoint matchupsrollup
+    python python/nba_stats_03_refill_empty.py --check          # census only, no network
+    python python/nba_stats_03_refill_empty.py                  # refill everything
+    python python/nba_stats_03_refill_empty.py 2015:2026        # season range
+    python python/nba_stats_03_refill_empty.py --endpoint matchupsrollup
 """
 
 import sys
 
-from scrape_raw_json import REPO, STORE_SUBDIR
+from nba_stats_01_raw_json_scrape import REPO, STORE_SUBDIR
 from sportsdataverse.scrape.stats.league_config import NBA
 from sportsdataverse.scrape.stats.refill import main
 

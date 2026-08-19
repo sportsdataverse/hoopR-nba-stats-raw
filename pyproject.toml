@@ -32,15 +32,17 @@ build-backend = "setuptools.build_meta"
 # rather than a package.
 [tool.setuptools]
 py-modules = [
+    # Import seams — league bindings over the shared sdv-py engine, not stages.
     "endpoints",
-    "observability",
     "period_capture",
-    "proxy",
     "schedule_master",
-    "scrape_raw_json",
     "season_capture",
-    "session_transport",
-    "topup_player_gamelogs",
+    # Numbered stages, in build order. The directory listing IS the pipeline;
+    # a retired stage leaves a HOLE rather than renumbering its successors.
+    "nba_stats_01_raw_json_scrape",
+    "nba_stats_02_leaguegamelog_player_topup",
+    "nba_stats_03_refill_empty",
+    "nba_stats_99_schedule_master_creation",
 ]
 
 [tool.setuptools.package-dir]

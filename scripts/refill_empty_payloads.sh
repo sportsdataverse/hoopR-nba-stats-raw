@@ -19,7 +19,7 @@
 #   bash scripts/refill_empty_payloads.sh --endpoint matchupsrollup
 #
 # Watch it live from another terminal:
-#   tail -f logs/refill_empty.log
+#   tail -f logs/nba_stats_03_refill_empty.log
 #
 set -uo pipefail
 
@@ -31,7 +31,7 @@ cd "$REPO" || exit 1
 # check -- see sdv_preflight in scripts/_venv.sh.
 sdv_preflight sportsdataverse.scrape.stats curl_cffi
 
-LOG="$REPO/logs/refill_empty.log"
+LOG="$REPO/logs/nba_stats_03_refill_empty.log"
 mkdir -p "$REPO/logs"
 
 # There is deliberately no allow-list of "recoverable" endpoints here.
@@ -53,7 +53,7 @@ export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8
 
 # The census reads only the local tree, so it runs before the proxy gate.
 if [ "${1:-}" = "--check" ]; then
-  "$SDV_PY" python/refill_empty.py --check
+  "$SDV_PY" python/nba_stats_03_refill_empty.py --check
   exit $?
 fi
 
@@ -93,7 +93,7 @@ echo "[$(date -u +%FT%TZ)] proxy config loaded; timeout=${SDV_PY_NBA_STATS_TIMEO
 
 # Pass through any remaining args (a SEASON:RANGE, --endpoint X). Piped into
 # tee, so the shell would otherwise see tee's status, not the refiller's.
-"$SDV_PY" python/refill_empty.py "$@" 2>&1 | tee -a "$LOG"
+"$SDV_PY" python/nba_stats_03_refill_empty.py "$@" 2>&1 | tee -a "$LOG"
 status=${PIPESTATUS[0]}
 
 echo "[$(date -u +%FT%TZ)] refill DONE EXIT=$status" | tee -a "$LOG"

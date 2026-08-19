@@ -46,7 +46,7 @@ Run with this repo's own venv (``pyproject.toml`` + ``uv.lock`` pin
 sportsdataverse + curl_cffi; the bash entry points resolve it by sourcing
 ``scripts/_venv.sh``):
 
-    uv run python python/scrape_raw_json.py 1997:2026
+    uv run python python/nba_stats_01_raw_json_scrape.py 1997:2026
 """
 
 from __future__ import annotations

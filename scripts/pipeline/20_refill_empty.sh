@@ -28,9 +28,9 @@ SEASONS="${SEASONS:-}"
 # now, but files already on disk must be repaired. Deletions are tracked in git,
 # so `git checkout -- nba_stats/` undoes a bad run.
 echo "[$STAGE] empty-payload census + refill for $SEASONS"
-"$PY" python/refill_empty.py --check "$SEASONS" || true
+"$PY" python/nba_stats_03_refill_empty.py --check "$SEASONS" || true
 if [ "${REFILL_APPLY:-1}" = "1" ]; then
-  "$PY" python/refill_empty.py "$SEASONS"
+  "$PY" python/nba_stats_03_refill_empty.py "$SEASONS"
 else
   echo "[$STAGE] REFILL_APPLY=0 -- census only, nothing refetched"
 fi

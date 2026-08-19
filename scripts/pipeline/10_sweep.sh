@@ -30,4 +30,4 @@ export SDV_PY_NBA_STATS_TIMEOUT="${SDV_PY_NBA_STATS_TIMEOUT:-90}"
 
 echo "[$STAGE] sweeping $SEASONS (workers=$SCRAPE_WORKERS timeout=${SDV_PY_NBA_STATS_TIMEOUT}s)"
 # Resume is presence-on-disk, so Ctrl-C + rerun is always safe.
-PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 "$PY" python/scrape_raw_json.py "$SEASONS"
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_01_raw_json_scrape.py "$SEASONS"

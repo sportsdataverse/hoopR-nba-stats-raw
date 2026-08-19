@@ -40,4 +40,4 @@ fi
 
 : "${SEASONS:?[$STAGE] SEASONS is required (e.g. 2026 or 1996:2026)}"
 echo "[$STAGE] census for $SEASONS (no requests spent)"
-PYTHONIOENCODING=utf-8 "$PY" python/scrape_raw_json.py --check "$SEASONS"
+PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_01_raw_json_scrape.py --check "$SEASONS"

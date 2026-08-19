@@ -17,7 +17,7 @@ NBA Stats API -> hoopR-nba-stats-raw [HERE: scrape + cache + commit]
 ```
 
 Don't confuse with `hoopR-nba-raw` (ESPN NBA cache) or `wehoop-wnba-stats-raw`
-(the WNBA analog of this repo — same `scrape_raw_json.py` shape, its own
+(the WNBA analog of this repo — same `nba_stats_01_raw_json_scrape.py` shape, its own
 period math).
 
 ## Layout
@@ -29,7 +29,7 @@ which would resync the venv under a running multi-hour sweep.
 
 `python/` — the scrape package:
 
-- `scrape_raw_json.py` — the main sweep. Three passes per season:
+- `nba_stats_01_raw_json_scrape.py` — the main sweep. Three passes per season:
   season-level endpoints (`season_capture`), per-game payloads through
   sdv-py's read-through raw store (`SDV_PY_NBA_RAW_JSON_DIR` →
   `{endpoint}/{season}/{game_id}.json`, atomic tmp+rename), and per-period
@@ -57,9 +57,9 @@ which would resync the venv under a running multi-hour sweep.
   `HEARTBEAT_SECS`), miss classification (`endpoint_absent` / `timeout` /
   `throttled` / `error`), `ProxyHealth` quarantine, `Degradation` alerts.
   Structured fetch log: `logs/errors.jsonl`.
-- `refill_empty.py` — repair: deletes season-level files ≤2 bytes (exactly
+- `nba_stats_03_refill_empty.py` — repair: deletes season-level files ≤2 bytes (exactly
   `{}` / `[]`) and refetches those tuples. See "Repair flow".
-- `topup_player_gamelogs.py` — one-off top-up of the PLAYER `leaguegamelog`
+- `nba_stats_02_leaguegamelog_player_topup.py` — one-off top-up of the PLAYER `leaguegamelog`
   variant (`{season_type}_p.json` beside the team captures). Complete; kept
   for reference as the pattern for additive variant top-ups.
 

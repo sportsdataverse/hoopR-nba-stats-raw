@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SCRAPER = REPO / "python" / "scrape_raw_json.py"
+SCRAPER = REPO / "python" / "nba_stats_01_raw_json_scrape.py"
 
 # Inherit the real environment (HOME / SYSTEMROOT / ssl certs are all needed) and
 # blank ONLY the proxy creds, so load_proxies() returns an empty pool and the

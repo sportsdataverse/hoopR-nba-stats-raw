@@ -1,4 +1,4 @@
-"""Contract tests for the objects `scrape_raw_json.main()` wires together.
+"""Contract tests for the objects `nba_stats_01_raw_json_scrape.main()` wires together.
 
 These exist because a module swap left an incompatible consumer behind and
 nothing caught it until a live backfill crashed two seasons in:
@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin
 
-SCRAPER = Path(__file__).resolve().parent.parent / "python" / "scrape_raw_json.py"
+SCRAPER = Path(__file__).resolve().parent.parent / "python" / "nba_stats_01_raw_json_scrape.py"
 SOURCE = SCRAPER.read_text(encoding="utf-8")
 
 
@@ -47,13 +47,13 @@ def test_every_proxyhealth_attribute_the_scraper_uses_exists() -> None:
     used = _attrs_used(SOURCE, "health")
     assert used, "expected the scraper to use the health object"
     missing = sorted(a for a in used if not hasattr(ProxyHealth, a))
-    assert not missing, f"scrape_raw_json calls health.{missing} which ProxyHealth lacks"
+    assert not missing, f"nba_stats_01_raw_json_scrape calls health.{missing} which ProxyHealth lacks"
 
 
 def test_every_roundrobin_attribute_the_scraper_uses_exists() -> None:
     used = _attrs_used(SOURCE, "rr")
     missing = sorted(a for a in used if not hasattr(RoundRobin, a))
-    assert not missing, f"scrape_raw_json calls rr.{missing} which RoundRobin lacks"
+    assert not missing, f"nba_stats_01_raw_json_scrape calls rr.{missing} which RoundRobin lacks"
 
 
 def test_snapshot_exposes_the_keys_the_scraper_reads() -> None:

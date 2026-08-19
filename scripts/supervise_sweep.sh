@@ -2,7 +2,7 @@
 #
 # supervise_sweep.sh
 #
-# Keep python/scrape_raw_json.py alive: relaunch on abnormal death, stop
+# Keep python/nba_stats_01_raw_json_scrape.py alive: relaunch on abnormal death, stop
 # cleanly once it prints "sweep complete", give up after MAX_RESTARTS so a
 # real crash loop surfaces instead of spinning forever. The sweep is
 # idempotent (on-disk payloads are skipped) so each restart resumes.
@@ -33,11 +33,11 @@ log() { echo "[$(date -u '+%F %T')Z] $*" | tee -a "$WD"; }
 log "supervisor start: seasons=$SEASONS max_restarts=$MAX_RESTARTS"
 n=0
 while :; do
-  RUN="$REPO/logs/scrape_raw_json_$(date -u +%Y%m%d_%H%M%S).log"
+  RUN="$REPO/logs/nba_stats_01_raw_json_scrape_$(date -u +%Y%m%d_%H%M%S).log"
   log "launch #$((n + 1)) -> $RUN"
   ( cd "$REPO" && . "$HOME/.config/sdv/env" 2>/dev/null; \
     PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 SCRAPE_WORKERS="${SCRAPE_WORKERS:-6}" \
-      "$PY" python/scrape_raw_json.py "$SEASONS" >> "$RUN" 2>&1 )
+      "$PY" python/nba_stats_01_raw_json_scrape.py "$SEASONS" >> "$RUN" 2>&1 )
   rc=$?
   if grep -q 'sweep complete' "$RUN"; then
     log "SWEEP COMPLETE (rc=$rc) — supervisor exiting"

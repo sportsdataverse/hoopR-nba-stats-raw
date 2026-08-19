@@ -66,14 +66,14 @@ Season encoding is the **end year** (`2026` = 2025-26).
   `python/period_capture.py`), and the sdv-py raw-store convention all use
   it. One exception: the season-level half of the store keys its dirs by
   start year (`{endpoint}/2023/` holds 2023-24 — see the comment in
-  `python/topup_player_gamelogs.py`).
+  `python/nba_stats_02_leaguegamelog_player_topup.py`).
 - **TLS fingerprinting**: `stats.nba.com` blocks plain `requests` by JA3 —
   it produces a *silent timeout*, not an error, so a "hang" is usually this.
   All traffic goes through `curl_cffi` with `impersonate="chrome"`; see
   `sportsdataverse.scrape.stats.session_transport` (sdv-py; moved from `python/session_transport.py` in #325).
 - **Per-endpoint season floors** live in `ENDPOINT_MIN_SEASON` with
   `_skip_endpoint()` as the single owner of the comparison
-  (`python/scrape_raw_json.py`). Add a floor there, not at a call site.
+  (`python/nba_stats_01_raw_json_scrape.py`). Add a floor there, not at a call site.
 - **Proxy support**: NBA Stats rate-limits aggressively — production scrapes
   go through the rotating proxy pool. Never commit proxy
   IPs/credentials; route them through GitHub Actions secrets.

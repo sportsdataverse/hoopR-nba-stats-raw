@@ -14,24 +14,24 @@ in the sibling twin. Any diff between the two copies is drift, not a league
 difference.
 
 1. **League binding.** ``LEAGUE_ID = "00"/"10"`` literals (in
-   ``period_capture.py`` / ``schedule_master.py`` / ``scrape_raw_json.py``)
-   and the ``NBA``/``WNBA`` config object ``refill_empty.py`` imports must
+   ``period_capture.py`` / ``schedule_master.py`` / ``nba_stats_01_raw_json_scrape.py``)
+   and the ``NBA``/``WNBA`` config object ``nba_stats_03_refill_empty.py`` imports must
    bind the league this repo actually is. A copy-paste from the sibling that
    forgot to flip one of these would silently scrape/report the wrong league,
    or crash on the first real (non-``--check``) run -- exactly the
    ``sportsdataverse.nba.wnba_stats`` incident ``league_config.py`` documents
    in its ``WNBA`` entry.
 
-2. **Transport wiring.** ``scrape_raw_json.py``'s own module docstring states
+2. **Transport wiring.** ``nba_stats_01_raw_json_scrape.py``'s own module docstring states
    the contract: ``SessionTransport`` "owns proxy selection ... so the fetch
    closures pass no proxy_url" -- every live fetch call, in EVERY script under
    ``python/``, must route through ``transport=...``, never a raw
    ``proxy_url=rr.next()`` that bypasses health recording and the sticky JA3
    session. Two real regressions of exactly this kind have shipped: one
-   leftover pre-migration call site in ``scrape_raw_json.py``'s per-period
+   leftover pre-migration call site in ``nba_stats_01_raw_json_scrape.py``'s per-period
    boxscore closure, and a second in ``backfill_leaguegamelog_player.py``
    masked by a bare ``except ImportError: return None`` around a cross-repo
-   import (see 3). The first check used to scan only ``scrape_raw_json.py``;
+   import (see 3). The first check used to scan only ``nba_stats_01_raw_json_scrape.py``;
    that narrow scope is exactly how the second one survived, so it now scans
    every script.
 
@@ -103,21 +103,21 @@ def test_league_id_literals_match_this_repo() -> None:
     )
 
 
-def test_refill_empty_binds_the_right_league_config() -> None:
-    """``refill_empty.py`` imports NBA/WNBA by name and passes it to ``main()``
+def test_nba_stats_03_refill_empty_binds_the_right_league_config() -> None:
+    """``nba_stats_03_refill_empty.py`` imports NBA/WNBA by name and passes it to ``main()``
     -- the exact shape of the caught incident (importing a module that does
     not exist for this league)."""
     expected = _expected_league()
-    source = (PYTHON / "refill_empty.py").read_text(encoding="utf-8")
+    source = (PYTHON / "nba_stats_03_refill_empty.py").read_text(encoding="utf-8")
     imported = re.findall(
         r"from sportsdataverse\.scrape\.stats\.league_config import (\w+)", source
     )
-    assert imported, "refill_empty.py must import its LeagueConfig from league_config"
+    assert imported, "nba_stats_03_refill_empty.py must import its LeagueConfig from league_config"
     assert imported == [expected.key.upper()], (
-        f"refill_empty.py imports {imported}, expected [{expected.key.upper()!r}]"
+        f"nba_stats_03_refill_empty.py imports {imported}, expected [{expected.key.upper()!r}]"
     )
     assert re.search(rf"main\({expected.key.upper()}\b", source), (
-        f"refill_empty.py must call main({expected.key.upper()}, ...)"
+        f"nba_stats_03_refill_empty.py must call main({expected.key.upper()}, ...)"
     )
 
 
@@ -142,11 +142,11 @@ def test_no_script_bypasses_the_session_transport() -> None:
     recording; a stray ``proxy_url=`` call site skips both silently (the
     request still succeeds, it just isn't tracked or session-reused).
 
-    Scans every ``python/*.py``, not just ``scrape_raw_json.py`` -- that
+    Scans every ``python/*.py``, not just ``nba_stats_01_raw_json_scrape.py`` -- that
     narrower scope is exactly how a second bypass (in
     ``backfill_leaguegamelog_player.py``) survived the first version of this
     check. One closure called ``proxy_url=rr.next()`` after the rest of
-    ``scrape_raw_json.py`` had moved to ``transport=``; the other built its
+    ``nba_stats_01_raw_json_scrape.py`` had moved to ``transport=``; the other built its
     own ``RoundRobin`` and called ``proxy_url=provider()`` because the
     provider it meant to build (a ``SessionTransport``) came from an import
     that silently failed (see ``test_no_script_imports_the_data_repo_package``).

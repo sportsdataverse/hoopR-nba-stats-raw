@@ -2,7 +2,7 @@
 #
 # commit_loop.sh — keep the captured store committed while a sweep runs.
 #
-# scrape_raw_json.py only writes files; nothing commits them. On a multi-hour
+# nba_stats_01_raw_json_scrape.py only writes files; nothing commits them. On a multi-hour
 # backfill that leaves gigabytes of captured payloads sitting untracked, so a
 # crashed box or a full disk loses work that cost real requests against a shared
 # stats-host budget.
@@ -15,7 +15,7 @@
 #
 # <watch_pid> is the process to follow -- normally the launcher's own $$, since
 # run_backfill.sh knows exactly when its sweep ends. Without it the loop falls
-# back to `pgrep -f scrape_raw_json`, which does NOT work under Git Bash on
+# back to `pgrep -f nba_stats_01_raw_json_scrape`, which does NOT work under Git Bash on
 # Windows: pgrep cannot see native python.exe command lines, so it reported
 # "not running" mid-sweep and the loop exited after a single pass. Pass the pid.
 #
