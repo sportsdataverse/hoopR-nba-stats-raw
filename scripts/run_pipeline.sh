@@ -43,14 +43,14 @@ current_season() {
 case "$MODE" in
   daily)
     SEASONS="${SEASONS:-$(current_season)}"
-    STAGES="${ONLY:-10,30,40}"
+    STAGES="${ONLY:-10,11,12,30,40}"
     export SCRAPE_WORKERS="${SCRAPE_WORKERS:-4}"
     ;;
   backfill)
     SEASONS="${SEASONS:-1996:$(current_season)}"
     # 00 gates on a census before spending a single request; 50 refreshes the
     # release tarballs, which only a backfill has a reason to do.
-    STAGES="${ONLY:-00,10,20,30,40,50}"
+    STAGES="${ONLY:-00,10,11,12,20,30,40,50}"
     export SCRAPE_WORKERS="${SCRAPE_WORKERS:-6}"
     ;;
   repair)

@@ -24,7 +24,7 @@ SEASONS="${SEASONS:-}"
 # The commit subject "NBA Stats Update (Start: YYYY End: YYYY)" is load-bearing
 # verbatim -- downstream tooling parses the years out of it.
 echo "[$STAGE] committing captured payloads"
-bash scripts/commit_raw_json.sh
+bash ops/commit_raw_json.sh
 rc=$?
 
 # The master artifacts live beside the json tree and commit_raw_json.sh

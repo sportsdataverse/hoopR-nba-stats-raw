@@ -48,8 +48,8 @@ uv run ruff check python tests
 # Scrape entry points (bash only; each sources scripts/_venv.sh).
 bash scripts/daily_refresh.sh                    # current season top-up
 bash scripts/backfill_nba_stats_raw.sh 1996:2026 # full cold backfill
-bash scripts/supervise_sweep.sh 2016:2026        # restart-on-death wrapper
-bash scripts/publish_season_bundles.sh           # refresh .bundles/*.tar.gz
+bash ops/supervise_sweep.sh 2016:2026        # restart-on-death wrapper
+bash ops/publish_season_bundles.sh           # refresh .bundles/*.tar.gz
 ```
 
 Season encoding is the **end year** (`2026` = 2025-26).
@@ -66,7 +66,7 @@ Season encoding is the **end year** (`2026` = 2025-26).
   `python/period_capture.py`), and the sdv-py raw-store convention all use
   it. One exception: the season-level half of the store keys its dirs by
   start year (`{endpoint}/2023/` holds 2023-24 — see the comment in
-  `python/nba_stats_02_leaguegamelog_player_topup.py`).
+  `python/nba_stats_10_leaguegamelog_player_topup.py`).
 - **TLS fingerprinting**: `stats.nba.com` blocks plain `requests` by JA3 —
   it produces a *silent timeout*, not an error, so a "hang" is usually this.
   All traffic goes through `curl_cffi` with `impersonate="chrome"`; see

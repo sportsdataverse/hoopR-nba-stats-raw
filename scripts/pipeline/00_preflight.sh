@@ -40,4 +40,8 @@ fi
 
 : "${SEASONS:?[$STAGE] SEASONS is required (e.g. 2026 or 1996:2026)}"
 echo "[$STAGE] census for $SEASONS (no requests spent)"
-PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_01_raw_json_scrape.py --check "$SEASONS"
+# --check each capture stage: sizes the work and verifies the proxy pool
+# without fetching. Both are checked because they fail for different
+# reasons -- 10 on a missing season index, 11 on the proxy pool.
+PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_01_season_endpoints.py --check "$SEASONS" || exit $?
+PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_02_game_endpoints.py --check "$SEASONS"

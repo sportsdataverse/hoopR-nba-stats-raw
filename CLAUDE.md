@@ -29,16 +29,14 @@ which would resync the venv under a running multi-hour sweep.
 
 `python/` — the scrape package:
 
-- `nba_stats_01_raw_json_scrape.py` — the main sweep. Three passes per season:
-  season-level endpoints (`season_capture`), per-game payloads through
-  sdv-py's read-through raw store (`SDV_PY_NBA_RAW_JSON_DIR` →
-  `{endpoint}/{season}/{game_id}.json`, atomic tmp+rename), and per-period
-  boxscores (`boxscoretraditionalv3_period`, windows from `period_capture`).
-  Game discovery reads the `leaguegamelog` payload pass 1 just persisted.
-  `ENDPOINT_MIN_SEASON` + `_skip_endpoint()` are the single owner of
-  per-endpoint season floors; PARKED endpoints (gamerotation, playercompare,
-  draftcombine*) sit behind a `<ENDPOINT>_MIN_SEASON` env sentinel so each is
-  independently re-enablable.
+- **Capture stages** — one scope each, independently runnable, resumable from
+  disk, sharing `_capture_runtime.py` for the proxy/transport/heartbeat
+  plumbing. `01_season_endpoints` persists `leaguegamelog`;
+  `02_game_endpoints` reads that index and captures one payload per game per
+  endpoint; `03_period_boxscores` sizes each game from its persisted
+  `playbyplayv3` and captures the per-period boxscores. `ENDPOINT_MIN_SEASON`
+  + `_skip_endpoint()` (now in `_capture_runtime.py`) remain the single owner
+  of per-endpoint season floors.
 - `endpoints.py` — declarative capture registry; each endpoint's parameter
   matrix is derived from its own wrapper signature, so new upstream endpoints
   are captured without an edit. Drives both this repo and the WNBA sibling.
@@ -57,16 +55,19 @@ which would resync the venv under a running multi-hour sweep.
   `HEARTBEAT_SECS`), miss classification (`endpoint_absent` / `timeout` /
   `throttled` / `error`), `ProxyHealth` quarantine, `Degradation` alerts.
   Structured fetch log: `logs/errors.jsonl`.
-- `nba_stats_03_refill_empty.py` — repair: deletes season-level files ≤2 bytes (exactly
+- `nba_stats_20_refill_empty.py` — repair: deletes season-level files ≤2 bytes (exactly
   `{}` / `[]`) and refetches those tuples. See "Repair flow".
-- `nba_stats_02_leaguegamelog_player_topup.py` — one-off top-up of the PLAYER `leaguegamelog`
+- `nba_stats_10_leaguegamelog_player_topup.py` — one-off top-up of the PLAYER `leaguegamelog`
   variant (`{season_type}_p.json` beside the team captures). Complete; kept
   for reference as the pattern for additive variant top-ups.
 
-`scripts/` — bash entry points only (each sources `_venv.sh`):
-`daily_refresh.sh`, `backfill_nba_stats_raw.sh`, `supervise_sweep.sh`,
-`commit_loop.sh`, `commit_raw_json.sh`, `refill_empty_payloads.sh`,
-`publish_season_bundles.sh`.
+`scripts/` — **drivers only** (each sources `_venv.sh`): `run_pipeline.sh` (the
+one orchestrator), `daily_refresh.sh` and `backfill.sh` (thin shims onto
+`-m daily` / `-m backfill`), and `pipeline/NN_*.sh` (the numbered stages).
+
+`ops/` — recurring operational tools that are NOT stages, run by hand:
+`supervise_sweep.sh`, `commit_loop.sh`, `commit_raw_json.sh`,
+`refill_empty_payloads.sh`, `publish_season_bundles.sh`.
 
 `tests/` — offline unit tests (`uv run pytest`; no network), run by the only
 workflow in `.github/workflows/` (`tests.yml`).
@@ -109,7 +110,7 @@ load-bearing verbatim — downstream tooling parses the years.
 Resume is `path.exists()` — presence, not content — so any payload persisted
 empty blocks its own refetch forever. The write guard now refuses empty `{}`
 payloads, but files already on disk must be repaired:
-`bash scripts/refill_empty_payloads.sh` (`--check` = census only, no network;
+`bash ops/refill_empty_payloads.sh` (`--check` = census only, no network;
 optional `LO:HI` / `--endpoint <slug>`). Run it after any large sweep;
 residential IP, same proxy requirements as the backfill. Deleted files are
 tracked in git, so `git checkout -- nba_stats/` restores them if a run goes

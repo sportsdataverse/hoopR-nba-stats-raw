@@ -11,8 +11,10 @@ schedule-master rebuild, and neither having the other's.
 
 | # | Stage | Does | Idempotent? | Needs network |
 |---|---|---|---|---|
-| 00 | `00_preflight.sh` | Import preflight, proxy env, and a `--check` census that sizes the sweep without fetching | yes | no |
-| 10 | `10_sweep.sh` | The scrape. Resume is presence-on-disk, so Ctrl-C + rerun is safe | yes | **yes** |
+| 00 | `00_preflight.sh` | Import preflight, proxy env, and a `--check` on each capture stage that sizes the work without fetching | yes | no |
+| 10 | `10_season_endpoints.sh` | Season-level payloads. Persists `leaguegamelog`, the game index 11 and 12 read back | yes | **yes** |
+| 11 | `11_game_endpoints.sh` | Per-game whole-game payloads | yes | **yes** |
+| 12 | `12_period_boxscores.sh` | Per-period boxscores, sized from each game's persisted play-by-play | yes | **yes** |
 | 20 | `20_refill_empty.sh` | Deletes payloads persisted as empty and refetches them | yes | **yes** |
 | 30 | `30_schedule_master.sh` | Rebuilds the schedule master + coverage index | yes | no |
 | 40 | `40_commit.sh` | Commit + push, one commit per season | yes | no |
@@ -22,35 +24,49 @@ Stage 30 is **advisory**: the master is a claim *about* the payloads, so a
 failure there does not stop stage 40 from committing the payloads themselves.
 Every other stage stops the chain on failure.
 
+The capture stages 10 → 11 → 12 are ordered by a DATA dependency through the
+store, not by shared memory: 10 persists the game index, 11 and 12 read it
+back. Each can be run, resumed, re-run or skipped on its own.
+
+
 ### Python stages (`python/`)
 
-The shell stages above are the pipeline's *steps*; these are the numbered
-Python entry points they invoke. The directory listing IS the enumeration —
-same convention as the `-data` siblings' `nba_stats_NN_*_creation.py`.
+One scope per stage — the directory listing IS the enumeration, same
+convention as the `-data` siblings' `nba_stats_NN_*_creation.py`.
 
-| # | Module | Does | Invoked by |
-|---|---|---|---|
-| 01 | `nba_stats_01_raw_json_scrape.py` | The sweep: discovery, season-level and per-game captures | `10_sweep.sh`, and `00_preflight.sh` via `--check` |
-| 02 | `nba_stats_02_leaguegamelog_player_topup.py` | PLAYER variant of `leaguegamelog`, landing additively beside the sweep's team rows | **no mode** — run manually |
-| 03 | `nba_stats_03_refill_empty.py` | Census + refill of payloads persisted as empty `{}` | `20_refill_empty.sh` |
-| 99 | `nba_stats_99_schedule_master_creation.py` | Schedule master + coverage index | `30_schedule_master.sh` |
+| # | Module | Scope | Reads | Invoked by |
+|---|---|---|---|---|
+| 01 | `nba_stats_01_season_endpoints.py` | season-level payloads | — | `10_season_endpoints.sh` |
+| 02 | `nba_stats_02_game_endpoints.py` | one payload per game per endpoint | `leaguegamelog` on disk | `11_game_endpoints.sh` |
+| 03 | `nba_stats_03_period_boxscores.py` | per-period boxscores | `leaguegamelog` + each game's `playbyplayv3` on disk | `12_period_boxscores.sh` |
+| 10 | `nba_stats_10_leaguegamelog_player_topup.py` | PLAYER variant of `leaguegamelog` | — | **no mode** — run manually |
+| 20 | `nba_stats_20_refill_empty.py` | repair: empty `{}` payloads | the store | `20_refill_empty.sh` |
+| 99 | `nba_stats_99_schedule_master_creation.py` | schedule master + coverage index | the whole store | `30_schedule_master.sh` |
 
-The numbers are **intended build order, not run order** — 02 is a real stage
-that no mode currently lists, and that is deliberate rather than an omission.
-A retired stage leaves a HOLE; successors are never renumbered, because the
-numbers mean the same thing across the twin repos.
+Bands, so a new stage never renumbers its neighbours: **01-09** capture scopes,
+**10-19** additive top-ups, **20-29** repair, **99** index rebuild. A retired
+stage leaves a HOLE — the numbers must mean the same thing in the WNBA twin.
 
-Unnumbered modules beside them are **import seams**, not stages: `endpoints.py`,
-`period_capture.py`, `season_capture.py` re-export the shared engine from
-sdv-py, and `schedule_master.py` holds the logic that stage 99 is a thin entry
-point over.
+Every capture stage takes the same CLI: `[--check] [--game-ids=FILE] LO:HI`.
+`--check` sizes the work and verifies the proxy pool without fetching.
+
+Unnumbered modules are **import seams**, not stages — no `main()`, they capture
+nothing:
+
+- `_capture_runtime.py` — the plumbing every capture stage shares: league
+  binding, per-endpoint season floors, proxy pool + sticky transport, progress
+  heartbeat, health summary, and the game-index read. Kept in one place rather
+  than duplicated three ways.
+- `endpoints.py`, `period_capture.py`, `season_capture.py` — re-export the
+  shared sdv-py engine.
+- `schedule_master.py` — the logic stage 99 is a thin entry point over.
 
 ## Modes
 
 | Mode | Seasons default | Stages | Workers |
 |---|---|---|---|
-| `daily` | current END-year season | `10,30,40` | 4 |
-| `backfill` | `1996:current` | `00,10,20,30,40,50` | 6 |
+| `daily` | current END-year season | `10,11,12,30,40` | 4 |
+| `backfill` | `1996:current` | `00,10,11,12,20,30,40,50` | 6 |
 | `repair` | current season | `20,30,40` | inherited |
 
 ```sh
@@ -58,7 +74,7 @@ bash scripts/run_pipeline.sh                        # daily, current season
 bash scripts/run_pipeline.sh -m backfill            # cold backfill
 bash scripts/run_pipeline.sh -m backfill -s 2015:2020
 bash scripts/run_pipeline.sh -m repair -s 2019
-bash scripts/run_pipeline.sh -k 10,40 -s 2026       # only these stages
+bash scripts/run_pipeline.sh -k 11,12 -s 2026       # only these stages
 DRY_RUN=1 bash scripts/run_pipeline.sh -m backfill  # print the plan, run nothing
 ```
 
@@ -83,8 +99,8 @@ year — `current_season()` in the orchestrator owns that math.
 Droplet cron, **not** GitHub Actions: `stats.nba.com` hangs rather than
 errors on a datacenter IP, so no hosted runner can do the scrape. The only
 in-repo workflow is offline tests. A cold backfill should be run by hand from a
-residential IP, under tmux, with `scripts/supervise_sweep.sh` as the
-crash-restart wrapper and `scripts/commit_loop.sh` committing finished seasons
+residential IP, under tmux, with `ops/supervise_sweep.sh` as the
+crash-restart wrapper and `ops/commit_loop.sh` committing finished seasons
 on a timer so a crashed box cannot lose gigabytes of captured work.
 
 ## Rate tuning is env-only
@@ -99,6 +115,23 @@ re-tuned without a code change:
 | `SDV_PY_NBA_STATS_TIMEOUT` | 90 | Per-request timeout (s) |
 | `REFILL_APPLY` | 1 | `0` = stage 20 censuses only, refetches nothing |
 | `DRY_RUN` | 0 | `1` = print the stage plan and exit |
+
+## Layout — drivers vs operational tools
+
+`scripts/` holds **drivers only**, so what is on the daily path is obvious:
+
+| Path | Role |
+|---|---|
+| `scripts/run_pipeline.sh` | the one orchestrator |
+| `scripts/daily_refresh.sh` | shim → `-m daily` (the droplet cron entry) |
+| `scripts/backfill.sh` | shim → `-m backfill` |
+| `scripts/pipeline/NN_*.sh` | the numbered stages |
+| `scripts/_venv.sh` | sourced interpreter resolver |
+
+`ops/` holds recurring operational tools that are **not** pipeline stages and
+are run by hand: `supervise_sweep.sh` (crash-restart wrapper),
+`commit_loop.sh` (commits a long sweep as it runs), `commit_raw_json.sh`,
+`refill_empty_payloads.sh`, `publish_season_bundles.sh`.
 
 ## Legacy entry points
 

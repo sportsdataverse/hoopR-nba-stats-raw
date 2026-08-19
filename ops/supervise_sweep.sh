@@ -11,7 +11,7 @@
 # detected immediately (the failure mode that once left the sweep idle for an
 # hour). Launch under tmux/nohup so it survives an SSH disconnect.
 #
-# Usage: tmux new-session -d -s sweepsup 'bash scripts/supervise_sweep.sh 1996:2025'
+# Usage: tmux new-session -d -s sweepsup 'bash ops/supervise_sweep.sh 1996:2025'
 set -u
 
 # PY: the venv carrying sportsdataverse (the raw store) + curl_cffi. Defaults

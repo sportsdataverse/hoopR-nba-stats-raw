@@ -10,8 +10,8 @@
 # commit_raw_json.sh is idempotent and commits one season at a time, so running it
 # on a timer produces exactly one commit per season as each finishes.
 #
-#   bash scripts/commit_loop.sh <watch_pid>   # until that process exits
-#   INTERVAL=120 bash scripts/commit_loop.sh <watch_pid>
+#   bash ops/commit_loop.sh <watch_pid>   # until that process exits
+#   INTERVAL=120 bash ops/commit_loop.sh <watch_pid>
 #
 # <watch_pid> is the process to follow -- normally the launcher's own $$, since
 # run_backfill.sh knows exactly when its sweep ends. Without it the loop falls
@@ -48,12 +48,12 @@ _sweep_running() {
 
 log "commit loop started (interval ${INTERVAL}s, watching ${WATCH_PID:-<pgrep>})"
 while true; do
-    bash scripts/commit_raw_json.sh >> "$LOG" 2>&1 || log "commit pass failed (will retry)"
+    bash ops/commit_raw_json.sh >> "$LOG" 2>&1 || log "commit pass failed (will retry)"
 
     if ! _sweep_running; then
         # One more pass after the sweep ends, so the final season is never stranded.
         sleep 10
-        bash scripts/commit_raw_json.sh >> "$LOG" 2>&1 || log "final commit pass failed"
+        bash ops/commit_raw_json.sh >> "$LOG" 2>&1 || log "final commit pass failed"
         log "sweep no longer running — commit loop exiting"
         exit 0
     fi

@@ -19,8 +19,8 @@ variant lands beside them as ``{season_type}_p.json``.
 Resumable: an existing capture is skipped without a request, so a killed run can
 be re-run. Writes are atomic (tmp + rename) via ``season_capture.write_payload``.
 
-    python scripts/nba_stats_02_leaguegamelog_player_topup.py            # 1996:2026
-    python scripts/nba_stats_02_leaguegamelog_player_topup.py 2020:2026  # a sub-range
+    python scripts/nba_stats_10_leaguegamelog_player_topup.py            # 1996:2026
+    python scripts/nba_stats_10_leaguegamelog_player_topup.py 2020:2026  # a sub-range
 
 Proxies are REQUIRED (stats.nba.com hangs on datacenter IPs and is slow to
 non-residential ones); export PROXY_ENDPOINT / PROXY_KEY / PROXY_PKG first --
@@ -107,9 +107,7 @@ def main(argv: list[str]) -> int:
             written += 1
             _log(f"season {season} {stype}: {rows} rows -> {path.name}")
 
-    _log(
-        f"top-up complete: {written} written | {skipped} present/empty | {failed} failed"
-    )
+    _log(f"top-up complete: {written} written | {skipped} present/empty | {failed} failed")
     for ep, errs, ec in health.endpoint_summary():
         _log(f"  {ep}: {errs} faults {ec}")
     health.close()

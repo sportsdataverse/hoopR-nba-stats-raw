@@ -45,26 +45,26 @@ bash scripts/backfill_nba_stats_raw.sh 1996:2026        # cold backfill (default
 SCRAPE_WORKERS=4 bash scripts/backfill_nba_stats_raw.sh # gentler pace
 
 # long ranges: crash-restart wrapper under tmux, + commit loop alongside
-tmux new-session -d -s sweepsup 'bash scripts/supervise_sweep.sh 1996:2026'
-bash scripts/commit_loop.sh <launcher_pid>              # commit seasons as they finish
+tmux new-session -d -s sweepsup 'bash ops/supervise_sweep.sh 1996:2026'
+bash ops/commit_loop.sh <launcher_pid>              # commit seasons as they finish
 
-bash scripts/commit_raw_json.sh                         # stage+commit+push, one commit/season
-bash scripts/publish_season_bundles.sh                  # refresh .bundles/ release assets
+bash ops/commit_raw_json.sh                         # stage+commit+push, one commit/season
+bash ops/publish_season_bundles.sh                  # refresh .bundles/ release assets
 ```
 
 Repair flow (recurring — run after any large sweep):
 
 ```sh
-bash scripts/refill_empty_payloads.sh --check           # census of empty {} captures, no network
-bash scripts/refill_empty_payloads.sh                   # delete + refetch exactly those
-bash scripts/refill_empty_payloads.sh 2015:2026         # or a season range / --endpoint <slug>
+bash ops/refill_empty_payloads.sh --check           # census of empty {} captures, no network
+bash ops/refill_empty_payloads.sh                   # delete + refetch exactly those
+bash ops/refill_empty_payloads.sh 2015:2026         # or a season range / --endpoint <slug>
 ```
 
 Watch a running job live:
 
 ```sh
 tail -f "$(ls -t logs/nba_stats_raw_backfill_*.log | head -1)"   # backfill
-tail -f logs/nba_stats_03_refill_empty.log                                    # repair
+tail -f logs/nba_stats_20_refill_empty.log                                    # repair
 tail -f "$(ls -t logs/watchdog_*.log | head -1)"                 # supervisor
 ```
 

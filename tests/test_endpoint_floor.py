@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from nba_stats_01_raw_json_scrape import ENDPOINT_MIN_SEASON, _skip_endpoint
+from _capture_runtime import ENDPOINT_MIN_SEASON, _skip_endpoint
 
 # Real NBA seasons the scraper sweeps (start-year encoding).
 REAL_SEASONS = (1996, 2005, 2015, 2016, 2020, 2026)
@@ -78,7 +78,7 @@ def test_gamerotation_defaults_to_parked() -> None:
         "import os, sys;"
         " os.environ.pop('GAMEROTATION_MIN_SEASON', None);"
         " sys.path.insert(0, 'python');"
-        " import nba_stats_01_raw_json_scrape as s;"
+        " import _capture_runtime as s;"
         " print(s.ENDPOINT_MIN_SEASON['gamerotation'])"
     )
     out = subprocess.run(
@@ -131,7 +131,7 @@ def _floors_in_subprocess(preamble: str, endpoints: tuple[str, ...]) -> list[int
         " if k.endswith('_MIN_SEASON')];"
         f" {preamble}"
         " sys.path.insert(0, 'python');"
-        " import nba_stats_01_raw_json_scrape as s;"
+        " import _capture_runtime as s;"
         f" print(*[s.ENDPOINT_MIN_SEASON[e] for e in {endpoints!r}])"
     )
     out = subprocess.run(
@@ -211,7 +211,7 @@ def test_no_duplicate_endpoint_keys() -> None:
     """
     import ast
 
-    src = (Path(__file__).resolve().parent.parent / "python" / "nba_stats_01_raw_json_scrape.py").read_text(
+    src = (Path(__file__).resolve().parent.parent / "python" / "_capture_runtime.py").read_text(
         encoding="utf-8"
     )
     for node in ast.walk(ast.parse(src)):
@@ -234,7 +234,7 @@ def test_no_false_ceilings() -> None:
     2021/2022/2024; the "NOTHING after 2019" reading dated from the era when
     draftcombinestats was swept with no season parameter at all. The mechanism
     silently discards real seasons, so an entry needs probe-dated evidence."""
-    from nba_stats_01_raw_json_scrape import ENDPOINT_MAX_SEASON
+    from _capture_runtime import ENDPOINT_MAX_SEASON
 
     assert ENDPOINT_MAX_SEASON == {}
 
