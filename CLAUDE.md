@@ -88,8 +88,11 @@ sweep exits 0 — a failed sweep never publishes a partial season.
 
 ## Backfill flow
 
-`backfill_nba_stats_raw.sh [LO:HI]` (default `1996:2026`) is the cold-backfill
-driver: run it YOURSELF in a terminal on a residential IP. It exports
+`scripts/backfill.sh [LO:HI]` (default `1996:2026`) is the cold-backfill
+entry point — a compatibility shim over `run_pipeline.sh -m backfill`, kept so
+existing invocations keep working (it was `backfill_nba_stats_raw.sh` before
+the sweep was split into numbered stages). Run it YOURSELF in a terminal on a
+residential IP. It exports
 `PROXY_*` from `~/.Renviron` (R reads that file; Python does not) and fails
 fast if they're missing. Resumable — on-disk payloads are skipped, Ctrl-C +
 rerun is always safe. `supervise_sweep.sh` is the crash-restart wrapper
