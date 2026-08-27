@@ -41,8 +41,8 @@ bash scripts/daily_refresh.sh    # current END-year season sweep, then commit+pu
 Backfill flow (manual, in your own terminal):
 
 ```sh
-bash scripts/backfill_nba_stats_raw.sh 1996:2026        # cold backfill (default range)
-SCRAPE_WORKERS=4 bash scripts/backfill_nba_stats_raw.sh # gentler pace
+bash scripts/backfill.sh 1996:2026        # cold backfill (default range)
+SCRAPE_WORKERS=4 bash scripts/backfill.sh # gentler pace
 
 # long ranges: crash-restart wrapper under tmux, + commit loop alongside
 tmux new-session -d -s sweepsup 'bash ops/supervise_sweep.sh 1996:2026'

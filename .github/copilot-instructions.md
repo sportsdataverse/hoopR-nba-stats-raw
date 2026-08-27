@@ -47,7 +47,7 @@ uv run ruff check python tests
 
 # Scrape entry points (bash only; each sources scripts/_venv.sh).
 bash scripts/daily_refresh.sh                    # current season top-up
-bash scripts/backfill_nba_stats_raw.sh 1996:2026 # full cold backfill
+bash scripts/backfill.sh 1996:2026               # full cold backfill
 bash ops/supervise_sweep.sh 2016:2026        # restart-on-death wrapper
 bash ops/publish_season_bundles.sh           # refresh .bundles/*.tar.gz
 ```
