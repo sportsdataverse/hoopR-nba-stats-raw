@@ -92,3 +92,18 @@ Every stage is idempotent and re-runnable:
   refuses empty payloads; `refill_empty_payloads.sh` repairs files already on
   disk. Deleted files are tracked in git, so `git checkout -- nba_stats/`
   undoes a bad run.
+
+## Automation & status
+
+<!-- BEGIN GENERATED: status -->
+
+| workflow | schedule | last run |
+|---|---|---|
+| [![orphan_scripts.yml](https://github.com/sportsdataverse/hoopR-nba-stats-raw/actions/workflows/orphan_scripts.yml/badge.svg)](https://github.com/sportsdataverse/hoopR-nba-stats-raw/actions/workflows/orphan_scripts.yml) | on push / dispatch | 2026-08-27 |
+| [![tests.yml](https://github.com/sportsdataverse/hoopR-nba-stats-raw/actions/workflows/tests.yml/badge.svg)](https://github.com/sportsdataverse/hoopR-nba-stats-raw/actions/workflows/tests.yml) | on push / PR / dispatch | 2026-08-28 |
+
+| release tag | assets | size | last publish |
+|---|---:|---:|---|
+| [`nba-stats-raw-json`](https://github.com/sportsdataverse/hoopR-nba-stats-raw/releases/tag/nba-stats-raw-json) | 31 | 1,482.2 MB | 2026-07-28 |
+
+<!-- END GENERATED: status -->
