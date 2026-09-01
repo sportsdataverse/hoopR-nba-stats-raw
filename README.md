@@ -11,6 +11,103 @@ tag (`.bundles/nba_stats_json_YYYY.tar.gz`).
 
 Seasons are labelled by **END year**: `1996` = 1995-96, `2026` = 2025-26.
 
+## hoopR NBA Stats workflow diagram
+
+```mermaid
+  graph LR;
+    S[stats.nba.com]-->A[hoopR-nba-stats-raw];
+    A[hoopR-nba-stats-raw]-->B[hoopR-nba-stats-data];
+    A[hoopR-nba-stats-raw]-->D[nba-stats-raw-json season bundles];
+    B[hoopR-nba-stats-data]-->C1[nba_stats_schedules];
+    B[hoopR-nba-stats-data]-->C2[nba_stats_pbp];
+    B[hoopR-nba-stats-data]-->C3[nba_stats_possessions];
+    B[hoopR-nba-stats-data]-->C4[nba_stats_game_lineups];
+    B[hoopR-nba-stats-data]-->C5[nba_stats_lineups];
+    B[hoopR-nba-stats-data]-->C6[nba_stats_shots];
+    B[hoopR-nba-stats-data]-->C7[nba_stats_player_boxscores];
+    B[hoopR-nba-stats-data]-->C8[nba_stats_team_boxscores];
+    B[hoopR-nba-stats-data]-->C9[nba_stats_player_game_logs];
+    B[hoopR-nba-stats-data]-->C10[nba_stats_player_season_stats];
+    B[hoopR-nba-stats-data]-->C11[nba_stats_team_season_stats];
+    B[hoopR-nba-stats-data]-->C12[nba_stats_game_rosters];
+    B[hoopR-nba-stats-data]-->C13[nba_stats_rosters];
+    B[hoopR-nba-stats-data]-->C14[nba_stats_standings];
+    B[hoopR-nba-stats-data]-->C15[nba_stats_officials];
+    B[hoopR-nba-stats-data]-->C16[nba_stats_coaches];
+    B[hoopR-nba-stats-data]-->C17[nba_stats_draft];
+    B[hoopR-nba-stats-data]-->C18[nba_stats_leaguedash];
+```
+
+```mermaid
+flowchart TB;
+    subgraph A[hoopR-nba-stats-raw];
+        direction TB;
+        A0[scripts/daily_refresh.sh]-->A1[python/nba_stats_01_season_endpoints.py];
+        A1[python/nba_stats_01_season_endpoints.py]-->A2[python/nba_stats_02_game_endpoints.py];
+        A2[python/nba_stats_02_game_endpoints.py]-->A3[python/nba_stats_03_period_boxscores.py];
+        A3[python/nba_stats_03_period_boxscores.py]-->A4[python/nba_stats_10_leaguegamelog_player_topup.py];
+        A4[python/nba_stats_10_leaguegamelog_player_topup.py]-->A5[python/nba_stats_20_refill_empty.py];
+        A5[python/nba_stats_20_refill_empty.py]-->A6[python/nba_stats_99_schedule_master_creation.py];
+        A6[python/nba_stats_99_schedule_master_creation.py]-->A7[ops/publish_season_bundles.sh];
+    end;
+
+    subgraph B[hoopR-nba-stats-data];
+        direction TB;
+        B0[scripts/daily_nba_stats_python_processor.sh]-->B1[python/nba_data_build/pipeline_cli.py];
+        B1[python/nba_data_build/pipeline_cli.py]-->B2[python/nba_data_build/build.py];
+        B2[python/nba_data_build/build.py]-->B3[python/nba_data_build/master.py];
+        B3[python/nba_data_build/master.py]-->B4[python/nba_data_build/docs.py];
+    end;
+
+    subgraph C[sportsdataverse-data Releases];
+        direction TB;
+        C1[nba_stats_schedules];
+        C2[nba_stats_pbp];
+        C3[nba_stats_possessions];
+        C4[nba_stats_game_lineups];
+        C5[nba_stats_lineups];
+        C6[nba_stats_shots];
+        C7[nba_stats_player_boxscores];
+        C8[nba_stats_team_boxscores];
+        C9[nba_stats_player_game_logs];
+        C10[nba_stats_player_season_stats];
+        C11[nba_stats_team_season_stats];
+        C12[nba_stats_game_rosters];
+        C13[nba_stats_rosters];
+        C14[nba_stats_standings];
+        C15[nba_stats_officials];
+        C16[nba_stats_coaches];
+        C17[nba_stats_draft];
+        C18[nba_stats_leaguedash];
+    end;
+
+    A-->B;
+    B-->C;
+```
+
+`scripts/daily_refresh.sh` (raw, droplet cron) and
+`scripts/daily_nba_stats_python_processor.sh` (data) are the drivers; the raw side
+also publishes whole-season JSON bundles to its own `nba-stats-raw-json` release.
+Stage numbers are intended build order, not run order.
+
+[hoopR-mbb-raw repository (source: ESPN)](https://github.com/sportsdataverse/hoopR-mbb-raw)
+
+[hoopR-mbb-data repository (source: ESPN)](https://github.com/sportsdataverse/hoopR-mbb-data)
+
+[hoopR-nba-raw repository (source: ESPN)](https://github.com/sportsdataverse/hoopR-nba-raw)
+
+[hoopR-nba-data repository (source: ESPN)](https://github.com/sportsdataverse/hoopR-nba-data)
+
+[hoopR-nba-stats-raw repository (source: NBA Stats)](https://github.com/sportsdataverse/hoopR-nba-stats-raw)
+
+[hoopR-nba-stats-data repository (source: NBA Stats)](https://github.com/sportsdataverse/hoopR-nba-stats-data)
+
+[ncaa-mbb-hoops-raw repository (source: stats.ncaa.org)](https://github.com/sportsdataverse/ncaa-mbb-hoops-raw)
+
+[ncaa-mbb-hoops-data repository (source: stats.ncaa.org)](https://github.com/sportsdataverse/ncaa-mbb-hoops-data)
+
+[hoopR-kp-data repository (source: KenPom, dormant)](https://github.com/sportsdataverse/hoopR-kp-data)
+
 ## Setup
 
 ```sh
