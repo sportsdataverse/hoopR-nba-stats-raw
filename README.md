@@ -214,3 +214,21 @@ Every stage is idempotent and re-runnable:
 | [`nba-stats-raw-json`](https://github.com/sportsdataverse/hoopR-nba-stats-raw/releases/tag/nba-stats-raw-json) | 31 | 1,482.2 MB | 2026-07-28 |
 
 <!-- END GENERATED: status -->
+
+## Consumers
+
+The packages that read what this repo produces:
+
+- **R:** [hoopR](https://hoopR.sportsdataverse.org) — docs at <https://hoopR.sportsdataverse.org>
+- **Python:** [`sportsdataverse.nba (raw-store backend)`](https://github.com/sportsdataverse/sportsdataverse-py) — docs at <https://py.sportsdataverse.org>
+
+## Stage inventory
+
+Every numbered pipeline stage in `python/` (auto-listed; run subsets with the `scripts/*.sh` drivers by number or name):
+
+- `python/nba_stats_01_season_endpoints.py`
+- `python/nba_stats_02_game_endpoints.py`
+- `python/nba_stats_03_period_boxscores.py`
+- `python/nba_stats_10_leaguegamelog_player_topup.py`
+- `python/nba_stats_20_refill_empty.py`
+- `python/nba_stats_99_schedule_master_creation.py`
