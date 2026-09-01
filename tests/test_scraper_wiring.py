@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin
 
-SCRAPER = Path(__file__).resolve().parent.parent / "python" / "_capture_runtime.py"
+SCRAPER = Path(__file__).resolve().parent.parent / "python" / "nba_stats_raw_scrape" / "_capture_runtime.py"
 SOURCE = SCRAPER.read_text(encoding="utf-8")
 
 

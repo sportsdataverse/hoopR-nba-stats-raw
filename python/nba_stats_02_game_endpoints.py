@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _capture_runtime import (  # noqa: E402
+from nba_stats_raw_scrape._capture_runtime import (  # noqa: E402
     STATS_PREFIX,
     WORKERS,
     Progress,
@@ -52,7 +52,7 @@ def main(argv: list[str]) -> int:
 
     store = resolve_store()
     stats, game_endpoints, _season = load_stats_module()
-    from period_capture import season_of  # noqa: E402
+    from nba_stats_raw_scrape.period_capture import season_of  # noqa: E402
     from sportsdataverse.nba.nba_possessions import (  # noqa: E402
         _raw_store_path,
         _through_raw_store,

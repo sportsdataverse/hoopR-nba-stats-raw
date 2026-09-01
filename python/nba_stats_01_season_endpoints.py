@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _capture_runtime import (  # noqa: E402
+from nba_stats_raw_scrape._capture_runtime import (  # noqa: E402
     ENDPOINT_MIN_SEASON,
     LEAGUE_ID,
     STATS_PREFIX,
@@ -53,8 +53,8 @@ def main(argv: list[str]) -> int:
 
     store = resolve_store()
     stats, _game_endpoints, _season_endpoints = load_stats_module()
-    from endpoints import plan_counts  # noqa: E402
-    from season_capture import capture_season  # noqa: E402
+    from nba_stats_raw_scrape.endpoints import plan_counts  # noqa: E402
+    from nba_stats_raw_scrape.season_capture import capture_season  # noqa: E402
 
     counts = plan_counts(stats, STATS_PREFIX, LEAGUE_ID)
     _log(f"stage 01 store: {store}")

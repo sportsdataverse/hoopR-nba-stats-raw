@@ -20,7 +20,7 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "python"))
 
-from period_capture import periods_in_game  # noqa: E402
+from nba_stats_raw_scrape.period_capture import periods_in_game  # noqa: E402
 
 
 def _some_pbp_on_disk(limit: int = 3) -> list[Path]:

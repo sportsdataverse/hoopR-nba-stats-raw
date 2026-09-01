@@ -31,14 +31,8 @@ build-backend = "setuptools.build_meta"
 # imported as top-level names by each other, so they are exposed as py-modules
 # rather than a package.
 [tool.setuptools]
+packages = ["nba_stats_raw_scrape"]
 py-modules = [
-    # Import seams — shared plumbing and league bindings over the sdv-py engine.
-    # Not stages: no main(), they capture nothing.
-    "_capture_runtime",
-    "endpoints",
-    "period_capture",
-    "schedule_master",
-    "season_capture",
     # Capture stages, one scope each, independently runnable and resumable.
     "nba_stats_01_season_endpoints",
     "nba_stats_02_game_endpoints",

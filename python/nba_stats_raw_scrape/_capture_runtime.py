@@ -271,7 +271,7 @@ def load_stats_module():
     import importlib
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from endpoints import discover
+    from nba_stats_raw_scrape.endpoints import discover
 
     stats = importlib.import_module(f"sportsdataverse.{LEAGUE_SLUG}.{STATS_PREFIX}")
     game_endpoints, season_endpoints = discover(stats, STATS_PREFIX)
@@ -340,7 +340,7 @@ def game_ids_for_season(store: str, season: int) -> set[str]:
     Reading from disk rather than re-fetching is what makes 02 and 03
     independently runnable: the index is already paid for.
     """
-    from season_capture import game_ids_from_gamelog, payload_path
+    from nba_stats_raw_scrape.season_capture import game_ids_from_gamelog, payload_path
 
     gids: set[str] = set()
     for stype in SEASON_TYPES:
@@ -365,7 +365,7 @@ def targeted_ids(ids_file: str) -> dict[int, list[str]]:
     All-Star, play-in and Cup-final games are unreachable by the season sweep
     however often it is rerun -- they have to be named.
     """
-    from period_capture import season_of
+    from nba_stats_raw_scrape.period_capture import season_of
 
     out: dict[int, list[str]] = {}
     for line in Path(ids_file).read_text(encoding="utf-8").splitlines():

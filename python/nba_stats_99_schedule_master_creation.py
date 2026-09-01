@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from schedule_master import (
+from nba_stats_raw_scrape.schedule_master import (
     build_coverage,
     build_master,
     load_universe,

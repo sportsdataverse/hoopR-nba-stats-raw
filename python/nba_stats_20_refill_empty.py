@@ -15,7 +15,7 @@ Usage
 
 import sys
 
-from _capture_runtime import REPO, STORE_SUBDIR
+from nba_stats_raw_scrape._capture_runtime import REPO, STORE_SUBDIR
 from sportsdataverse.scrape.stats.league_config import NBA
 from sportsdataverse.scrape.stats.refill import main
 

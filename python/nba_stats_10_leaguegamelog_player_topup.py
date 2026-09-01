@@ -45,7 +45,7 @@ def _log(msg: str) -> None:
 def main(argv: list[str]) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-    from season_capture import payload_path, write_payload
+    from nba_stats_raw_scrape.season_capture import payload_path, write_payload
     from sportsdataverse.nba.nba_schedule import year_to_season
     from sportsdataverse.nba.nba_stats import nba_stats_leaguegamelog
     from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies

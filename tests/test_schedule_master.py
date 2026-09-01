@@ -13,7 +13,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from schedule_master import (
+from nba_stats_raw_scrape.schedule_master import (
     _UNIVERSE_SCHEMA,
     SCRAPE_STATE_COLUMNS,
     build_coverage,

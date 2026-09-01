@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 import pytest
-from endpoints import (
+from nba_stats_raw_scrape.endpoints import (
     ENDPOINT_MEASURE_TYPES,
     LEAGUE_NBA,
     LEAGUE_WNBA,
@@ -23,7 +23,7 @@ from endpoints import (
     season_variants,
     slug,
 )
-from season_capture import (
+from nba_stats_raw_scrape.season_capture import (
     _ids_from,
     capture_season,
     game_ids_from_gamelog,
@@ -560,7 +560,7 @@ class AxisStats:
 
 def test_synergy_sweeps_the_full_play_type_matrix() -> None:
     v = list(season_variants(AxisStats.stub_synergyplaytypes, 2023, LEAGUE_NBA))
-    from endpoints import PLAY_TYPES, TYPE_GROUPINGS
+    from nba_stats_raw_scrape.endpoints import PLAY_TYPES, TYPE_GROUPINGS
     assert len(v) == len(SEASON_TYPES) * len(PLAY_TYPES) * len(TYPE_GROUPINGS) * len(PER_MODES)
     slugs = {s for s, _k in v}
     assert "regular-season_isolation_offensive_pergame" in slugs
@@ -568,7 +568,7 @@ def test_synergy_sweeps_the_full_play_type_matrix() -> None:
 
 
 def test_ptstats_sweeps_all_twelve_measures() -> None:
-    from endpoints import PT_MEASURE_TYPES
+    from nba_stats_raw_scrape.endpoints import PT_MEASURE_TYPES
     v = list(season_variants(AxisStats.stub_leaguedashptstats, 2023, LEAGUE_NBA))
     assert len(v) == len(SEASON_TYPES) * len(PT_MEASURE_TYPES) * len(PER_MODES)
     got = {k["pt_measure_type"] for _s, k in v}
@@ -576,7 +576,7 @@ def test_ptstats_sweeps_all_twelve_measures() -> None:
 
 
 def test_ptdefend_sweeps_all_six_categories() -> None:
-    from endpoints import DEFENSE_CATEGORIES
+    from nba_stats_raw_scrape.endpoints import DEFENSE_CATEGORIES
     v = list(season_variants(AxisStats.stub_leaguedashptdefend, 2023, LEAGUE_NBA))
     got = {k["defense_category"] for _s, k in v}
     assert got == set(DEFENSE_CATEGORIES)
