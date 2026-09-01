@@ -190,6 +190,16 @@ Every stage is idempotent and re-runnable:
   disk. Deleted files are tracked in git, so `git checkout -- nba_stats/`
   undoes a bad run.
 
+## Reports & explainers
+
+<!-- BEGIN GENERATED: reports -->
+
+| Report | What it is | Last updated |
+|---|---|---|
+| _none yet_ | — | — |
+
+<!-- END GENERATED: reports -->
+
 ## Automation & status
 
 <!-- BEGIN GENERATED: status -->
