@@ -17,7 +17,7 @@ NBA Stats API -> hoopR-nba-stats-raw [HERE: scrape + cache + commit]
 ```
 
 Don't confuse with `hoopR-nba-raw` (ESPN NBA cache) or `wehoop-wnba-stats-raw`
-(the WNBA analog of this repo — same `nba_stats_01_raw_json_scrape.py` shape, its own
+(the WNBA analog of this repo — same numbered `*_stats_NN_*` capture-stage shape, its own
 period math).
 
 ## Layout
