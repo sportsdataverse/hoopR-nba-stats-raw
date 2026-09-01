@@ -190,6 +190,48 @@ Every stage is idempotent and re-runnable:
   disk. Deleted files are tracked in git, so `git checkout -- nba_stats/`
   undoes a bad run.
 
+## Repository layout
+
+<!-- BEGIN GENERATED: layout -->
+
+```
+hoopR-nba-stats-raw/
+├── logs/   # per-run logs (gitignored where large)
+├── nba_stats/
+│   └── json/
+├── ops/   # cron definitions and runbooks
+│   ├── commit_loop.sh
+│   ├── commit_raw_json.sh
+│   ├── publish_season_bundles.sh
+│   ├── refill_empty_payloads.sh
+│   └── supervise_sweep.sh
+├── python/   # Python pipeline stages, numbered in build order
+│   ├── hoopr_nba_stats_raw_scrape.egg-info/
+│   ├── nba_stats_raw_scrape/
+│   ├── nba_stats_01_season_endpoints.py
+│   ├── nba_stats_02_game_endpoints.py
+│   ├── nba_stats_03_period_boxscores.py
+│   ├── nba_stats_10_leaguegamelog_player_topup.py
+│   ├── nba_stats_20_refill_empty.py
+│   └── nba_stats_99_schedule_master_creation.py
+├── scripts/   # bash drivers (the daily/weekly entry points)
+│   ├── pipeline/
+│   ├── _venv.sh
+│   ├── backfill.sh
+│   ├── daily_refresh.sh
+│   └── run_pipeline.sh
+└── tests/   # test suite
+    ├── test_endpoint_floor.py
+    ├── test_period_count_from_disk.py
+    ├── test_schedule_master.py
+    ├── test_scraper_wiring.py
+    ├── test_season_capture.py
+    ├── test_targeted_game_ids.py
+    └── test_twin_consistency.py
+```
+
+<!-- END GENERATED: layout -->
+
 ## Reports & explainers
 
 <!-- BEGIN GENERATED: reports -->
