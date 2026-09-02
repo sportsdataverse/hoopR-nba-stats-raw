@@ -16,6 +16,23 @@ empty payload would block its own refetch forever -- see stage 20).
     python python/nba_stats_01_season_endpoints.py 2026
     python python/nba_stats_01_season_endpoints.py 1996:2026
     python python/nba_stats_01_season_endpoints.py --check 2026   # size it, fetch nothing
+
+Two flags narrow a run to a single family's backfill:
+
+    --endpoints=a,b   capture ONLY these season endpoints (floors still apply)
+    --no-proxy        go direct instead of through the rotating pool
+
+``--no-proxy`` is opt-in and never the default. The pool exists because the
+per-game sweep is thousands of calls per season and gets rate-limited; a
+season-endpoint backfill is tens of calls and does not. Measured 2026-09-02
+from a residential IP: leaguehustlestatsplayer 2024-25 direct through curl_cffi
+answered HTTP 200 in 2.91 s with no throttle, and the full 88-call hustle
+backfill ran with zero faults. Do NOT reach for it on stages 02/03, and do not
+use it from a datacenter IP -- there the un-proxied call HANGS rather than
+failing, which is the behaviour the pool requirement was written against.
+
+    python python/nba_stats_01_season_endpoints.py --no-proxy \
+        --endpoints=leaguehustlestatsplayer,leaguehustlestatsteam 2015:2025
 """
 
 from __future__ import annotations
@@ -40,6 +57,19 @@ from nba_stats_raw_scrape._capture_runtime import (  # noqa: E402
 )
 
 
+def _only_endpoints(argv: list[str]) -> set[str] | None:
+    """``--endpoints=a,b`` -> ``{"a", "b"}``; ``None`` when the flag is absent.
+
+    An EMPTY value (``--endpoints=``) returns an empty set, not ``None``: "capture
+    nothing" is a legitimate no-op, while silently widening it back to the full
+    sweep would be the opposite of what was asked.
+    """
+    raw = next((a.split("=", 1)[1] for a in argv if a.startswith("--endpoints=")), None)
+    if raw is None:
+        return None
+    return {e.strip() for e in raw.split(",") if e.strip()}
+
+
 def main(argv: list[str]) -> int:
     parsed = parse_common(argv, __doc__)
     if parsed is None:
@@ -51,8 +81,14 @@ def main(argv: list[str]) -> int:
         )
         return 0
 
+    only = _only_endpoints(argv)
     store = resolve_store()
-    stats, _game_endpoints, _season_endpoints = load_stats_module()
+    stats, _game_endpoints, season_endpoints = load_stats_module()
+    if only is not None:
+        unknown = sorted(only - set(season_endpoints))
+        if unknown:
+            _log(f"stage 01: --endpoints names no season endpoint: {', '.join(unknown)}")
+            return 2
     from nba_stats_raw_scrape.endpoints import plan_counts  # noqa: E402
     from nba_stats_raw_scrape.season_capture import capture_season  # noqa: E402
 
@@ -63,10 +99,15 @@ def main(argv: list[str]) -> int:
         f" ({counts['season_calls_per_season']} calls/season)"
     )
 
-    transport, health, pool = open_transport()
-    if not pool:
-        return no_proxy_error()
-    _log(f"proxy pool: {len(pool)} entries")
+    direct = "--no-proxy" in argv
+    if direct:
+        transport, health, pool = None, None, []
+        _log("proxy pool: BYPASSED (--no-proxy) -- calls go direct from this IP")
+    else:
+        transport, health, pool = open_transport()
+        if not pool:
+            return no_proxy_error()
+        _log(f"proxy pool: {len(pool)} entries")
     if check_only:
         _log("--check: stage sized and proxy pool verified; fetching nothing")
         return 0
@@ -78,6 +119,11 @@ def main(argv: list[str]) -> int:
     written = skipped = failed = 0
     for season in seasons:
         skip_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, season)}
+        if only is not None:
+            # The allowlist NARROWS; it never un-parks. An endpoint below its
+            # floor stays skipped even when named, so a typo'd backfill cannot
+            # quietly resume hammering a parked endpoint.
+            skip_eps |= set(season_endpoints) - only
         w, s, f = capture_season(
             season,
             store,
@@ -93,7 +139,8 @@ def main(argv: list[str]) -> int:
         skipped += s
         failed += f
 
-    summarize_health(health)
+    if health is not None:  # --no-proxy has no pool to report on
+        summarize_health(health)
     _log(f"stage 01 complete: {written} written, {skipped} already present, {failed} failed")
     return 0
 

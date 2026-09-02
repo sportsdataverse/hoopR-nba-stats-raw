@@ -334,7 +334,13 @@ def test_real_modules_discover_expected_shapes() -> None:
     from sportsdataverse.nba import nba_stats as N
     from sportsdataverse.wnba import wnba_stats as W
 
-    for mod, pre, n_game in ((W, "wnba_stats", 14), (N, "nba_stats", 13)):
+    # These counts are a DRIFT GATE on the sdv-py pin, not a fact about the API:
+    # discover() reads whichever wrapper set uv.lock resolved. Re-pinning to
+    # current main on 2026-09-02 (to reach the hustle wrappers) moved NBA 13 -> 17
+    # and WNBA 14 -> 21. When this fails after a re-lock, the right response is to
+    # look at what appeared and decide -- floor it, or park it in
+    # ENDPOINT_MIN_SEASON -- and only then update the number here.
+    for mod, pre, n_game in ((W, "wnba_stats", 21), (N, "nba_stats", 17)):
         game, season = discover(mod, pre)
         assert len(game) == n_game
         assert len(season) > 30

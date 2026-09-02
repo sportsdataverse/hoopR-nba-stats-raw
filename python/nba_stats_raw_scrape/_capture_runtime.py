@@ -37,7 +37,16 @@ STORE_ENV = "SDV_PY_NBA_RAW_JSON_DIR"
 STORE_SUBDIR = ("nba_stats", "json")
 # -----------------------------------------------------------------------------
 
-REPO = Path(__file__).resolve().parent.parent
+# parents[2] because this file sits at <repo>/python/nba_stats_raw_scrape/.
+# It was `parent.parent` until this commit, which was correct only while the
+# module lived at <repo>/python/: the 2026-09-01 packaging move (903d504b26)
+# pushed it one directory deeper and carried the expression over unchanged, so
+# resolve_store() began answering <repo>/python/nba_stats/json -- a directory
+# that has never existed. Nothing raises on a wrong store root: capture resumes
+# on path.exists(), so every payload reads as absent and a sweep re-fetches the
+# whole archive into a scratch tree while the real store stays empty-handed.
+# Pinned by tests/test_capture_runtime_store.py.
+REPO = Path(__file__).resolve().parents[2]
 SEASON_TYPES = ("Regular Season", "Playoffs")
 
 
@@ -132,6 +141,44 @@ ENDPOINT_MIN_SEASON = {
     # --- season-level: matchup data (2017-18+, same era as boxscorematchups) ---
     "matchupsrollup": 2017,
     "leagueseasonmatchups": 2017,
+    # --- season-level: hustle (2015-16+) ---
+    # Probed live 2026-09-02 (direct residential, no proxy, curl_cffi chrome):
+    # leaguehustlestatsplayer 2013-14 -> 0 rows, 2014-15 -> 0 rows, 2015-16 -> 147,
+    # 2016-17 -> 485; leaguehustlestatsteam the same boundary (0 / 0 / 15 / 30).
+    # Both floors are the ROW boundary of a valid envelope, not absence of capture.
+    # 2015-16 is a PARTIAL season upstream (the NBA started publishing hustle
+    # mid-season): 147 of ~485 players, 15 of 30 teams. Partial is still real, so
+    # it is captured; the compile records the per-season counts.
+    "leaguehustlestatsplayer": 2015,
+    "leaguehustlestatsteam": 2015,
+    # PARKED — the per-game half of the hustle family. Designed and costed
+    # (~14,500 requests / ~290 MB / multi-hour, proxy-rotated) but deliberately
+    # NOT started: unlike the season half it does not fit in a no-proxy window.
+    # Un-park with:
+    #   HUSTLESTATSBOXSCORE_MIN_SEASON=2015 bash scripts/backfill_nba_stats_raw.sh 2015:2026
+    "hustlestatsboxscore": _parked("hustlestatsboxscore"),
+    # PARKED — newly VISIBLE (not newly existing) endpoints. Re-pinning sdv-py to
+    # current main to reach the hustle wrappers also widened discover() from
+    # 48 season / 13 game to 58 / 17. Parking them keeps the re-pin from silently
+    # turning into an 11-endpoint scope expansion on the next scheduled sweep.
+    #
+    # Four are already ruled OUT by sdv-internal-refs/nba/ENDPOINT_DECISIONS.md:
+    # the whole boxscore*v2 family (so boxscorehustlev2 -- it is the nested
+    # v3-style envelope of the data hustlestatsboxscore serves in the plain
+    # resultSets shape), boxscoresummaryv3, scoreboardv2 and homepageleaders.
+    # The rest are simply unprobed, and this repo's rule is that a floor is
+    # MEASURED; each stays parked behind its own override until someone probes it.
+    "boxscorehustlev2": _parked("boxscorehustlev2"),
+    "boxscoresummaryv3": _parked("boxscoresummaryv3"),
+    "boxscoretraditionalv2": _parked("boxscoretraditionalv2"),
+    "homepageleaders": _parked("homepageleaders"),
+    "homepagev2": _parked("homepagev2"),
+    "leaderstiles": _parked("leaderstiles"),
+    "playercareerbycollegerollup": _parked("playercareerbycollegerollup"),
+    "scoreboardv2": _parked("scoreboardv2"),
+    "videoevents": _parked("videoevents"),
+    "videoeventsasset": _parked("videoeventsasset"),
+    "videostatus": _parked("videostatus"),
     # --- season-level: Synergy play-types (2015-16+) ---
     "synergyplaytypes": 2015,
     # --- season-level: game-log v-endpoints (tracking-era, empty pre-2014) ---
