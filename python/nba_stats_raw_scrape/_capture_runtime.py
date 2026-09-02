@@ -37,7 +37,16 @@ STORE_ENV = "SDV_PY_NBA_RAW_JSON_DIR"
 STORE_SUBDIR = ("nba_stats", "json")
 # -----------------------------------------------------------------------------
 
-REPO = Path(__file__).resolve().parent.parent
+# parents[2] because this file sits at <repo>/python/nba_stats_raw_scrape/.
+# It was `parent.parent` until this commit, which was correct only while the
+# module lived at <repo>/python/: the 2026-09-01 packaging move (903d504b26)
+# pushed it one directory deeper and carried the expression over unchanged, so
+# resolve_store() began answering <repo>/python/nba_stats/json -- a directory
+# that has never existed. Nothing raises on a wrong store root: capture resumes
+# on path.exists(), so every payload reads as absent and a sweep re-fetches the
+# whole archive into a scratch tree while the real store stays empty-handed.
+# Pinned by tests/test_capture_runtime_store.py.
+REPO = Path(__file__).resolve().parents[2]
 SEASON_TYPES = ("Regular Season", "Playoffs")
 
 
