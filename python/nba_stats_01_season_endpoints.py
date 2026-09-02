@@ -109,7 +109,15 @@ def main(argv: list[str]) -> int:
             return no_proxy_error()
         _log(f"proxy pool: {len(pool)} entries")
     if check_only:
-        _log("--check: stage sized and proxy pool verified; fetching nothing")
+        # Say only what was actually checked. With --no-proxy the branch above
+        # never calls open_transport(), so "proxy pool verified" would be a
+        # status line asserting something it did not test -- and --check exists
+        # precisely to be believed before a long run.
+        _log(
+            "--check: stage sized; "
+            + ("going direct, no pool to verify" if direct else "proxy pool verified")
+            + "; fetching nothing"
+        )
         return 0
 
     def _season_fetch(endpoint: str, kwargs: dict) -> object:

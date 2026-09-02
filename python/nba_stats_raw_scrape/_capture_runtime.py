@@ -158,16 +158,27 @@ ENDPOINT_MIN_SEASON = {
     #   HUSTLESTATSBOXSCORE_MIN_SEASON=2015 bash scripts/backfill_nba_stats_raw.sh 2015:2026
     "hustlestatsboxscore": _parked("hustlestatsboxscore"),
     # PARKED — newly VISIBLE (not newly existing) endpoints. Re-pinning sdv-py to
-    # current main to reach the hustle wrappers also widened discover() from
-    # 48 season / 13 game to 58 / 17. Parking them keeps the re-pin from silently
-    # turning into an 11-endpoint scope expansion on the next scheduled sweep.
+    # current main to reach the hustle wrappers widened discover() from
+    # 48 season / 13 game to 58 / 17, i.e. 14 endpoints that no previous sweep
+    # could see. Of those 14: TWO are floored and captured above
+    # (leaguehustlestatsplayer, leaguehustlestatsteam) and the other TWELVE are
+    # parked -- hustlestatsboxscore in its own block above, and the ELEVEN keys
+    # below. Parking is what keeps a lockfile bump from silently becoming a
+    # 12-endpoint scope expansion on the next scheduled sweep.
     #
-    # Four are already ruled OUT by sdv-internal-refs/nba/ENDPOINT_DECISIONS.md:
-    # the whole boxscore*v2 family (so boxscorehustlev2 -- it is the nested
-    # v3-style envelope of the data hustlestatsboxscore serves in the plain
-    # resultSets shape), boxscoresummaryv3, scoreboardv2 and homepageleaders.
-    # The rest are simply unprobed, and this repo's rule is that a floor is
-    # MEASURED; each stays parked behind its own override until someone probes it.
+    # FIVE of the eleven are already ruled OUT by
+    # sdv-internal-refs/nba/ENDPOINT_DECISIONS.md: the whole boxscore*v2 family,
+    # which is both boxscorehustlev2 (the nested v3-style envelope of the data
+    # hustlestatsboxscore serves in the plain resultSets shape) AND
+    # boxscoretraditionalv2; plus boxscoresummaryv3, scoreboardv2 and
+    # homepageleaders. The remaining SIX are simply unprobed, and this repo's
+    # rule is that a floor is MEASURED; each stays parked behind its own
+    # override until someone probes it.
+    #
+    # Keep these counts in step with the keys. They were wrong on first write
+    # (they said "11-endpoint expansion" and "four ruled OUT"), which is the
+    # cheap-to-make, hard-to-see kind of error: prose next to a map that nothing
+    # cross-checks.
     "boxscorehustlev2": _parked("boxscorehustlev2"),
     "boxscoresummaryv3": _parked("boxscoresummaryv3"),
     "boxscoretraditionalv2": _parked("boxscoretraditionalv2"),
