@@ -37,6 +37,7 @@ failing, which is the behaviour the pool requirement was written against.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -125,6 +126,11 @@ def main(argv: list[str]) -> int:
         return fn(return_parsed=False, transport=transport, **kwargs)
 
     written = skipped = failed = 0
+    # SEASON_REFRESH=1 (run_pipeline.sh daily mode) re-fetches existing payloads so
+    # the current season's index and aggregates advance; unset = resume on presence.
+    refresh = os.environ.get("SEASON_REFRESH") == "1"
+    _log(f"season-level refresh: {'on' if refresh else 'off (resume on presence)'}")
+
     for season in seasons:
         skip_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, season)}
         if only is not None:
@@ -141,6 +147,7 @@ def main(argv: list[str]) -> int:
             LEAGUE_ID,
             _log,
             skip_endpoints=skip_eps,
+            refresh=refresh,
         )
         _log(f"season {season}: season-level | {w} written | {s} present | {f} failed")
         written += w

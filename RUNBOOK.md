@@ -112,6 +112,7 @@ re-tuned without a code change:
 |---|---|---|
 | `SEASONS` | per mode | Season or `LO:HI` range |
 | `SCRAPE_WORKERS` | 4 daily / 6 backfill | Per-game fetch threads |
+| `SEASON_REFRESH` | 1 daily / unset backfill | Stage 10 re-fetches season-level payloads that already exist (current-season index, aggregates, rosters) |
 | `SDV_PY_NBA_STATS_TIMEOUT` | 90 | Per-request timeout (s) |
 | `REFILL_APPLY` | 1 | `0` = stage 20 censuses only, refetches nothing |
 | `DRY_RUN` | 0 | `1` = print the stage plan and exit |
