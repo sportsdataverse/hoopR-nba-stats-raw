@@ -190,9 +190,6 @@ ENDPOINT_MIN_SEASON = {
     "videoevents": _parked("videoevents"),
     "videoeventsasset": _parked("videoeventsasset"),
     "videostatus": _parked("videostatus"),
-    # Parked 2026-09-25 with the sdv-py bump for capture_season(refresh=): new in
-    # that surface, and capturing it is a scope decision, not part of the fix.
-    "drafthistory": _parked("drafthistory"),
     # --- season-level: Synergy play-types (2015-16+) ---
     "synergyplaytypes": 2015,
     # --- season-level: game-log v-endpoints (tracking-era, empty pre-2014) ---
