@@ -12,14 +12,14 @@
 # Archive paths are relative to nba_stats/json, i.e. {endpoint}/{season}/... , so
 # every season extracts into ONE shared directory that is a valid store root.
 #
-#   bash ops/publish_season_bundles.sh              # 1996:2026
+#   bash ops/publish_season_bundles.sh              # 1996:2027 (every END-year dir on disk)
 #   bash ops/publish_season_bundles.sh 2024:2026    # a sub-range
 #   DRY_RUN=1 bash ops/publish_season_bundles.sh    # build, don't upload
 #
 # Requires `gh` authenticated with write access to this repo.
 set -uo pipefail
 
-SEASONS="${1:-1996:2026}"
+SEASONS="${1:-1996:2027}"
 TAG="${BUNDLE_TAG:-nba-stats-raw-json}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STORE="$REPO_DIR/nba_stats/json"

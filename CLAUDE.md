@@ -88,7 +88,7 @@ sweep exits 0 — a failed sweep never publishes a partial season.
 
 ## Backfill flow
 
-`scripts/backfill.sh [LO:HI]` (default `1996:2026`) is the cold-backfill
+`scripts/backfill.sh [LO:HI]` (default `1997:<current END year>`) is the cold-backfill
 entry point — a compatibility shim over `run_pipeline.sh -m backfill`, kept so
 existing invocations keep working (it was `backfill_nba_stats_raw.sh` before
 the sweep was split into numbered stages). Run it YOURSELF in a terminal on a
@@ -121,14 +121,12 @@ wrong.
 
 ## Conventions & gotchas
 
-- **Season = END year** in CLI args, `SEASONS`, logs, commit labels and the
-  per-game dirs (1996-97 ⇒ `1997`; `2026` = 2025-26) — the ecosystem convention
-  (owner, 2026-09-30). **One START-keyed remnant:** the season-level half of the
-  store (`leaguegamelog/2025/` holds 2025-26), pending its re-key. Only three
-  seams translate END → START for it: stage 01's `capture_season` call,
-  `game_ids_for_season()`, and stage 20's refill spec. Passing an END year
-  straight into a season-level path fetches NEXT season: the 2026-09-30 daily did
-  exactly that and indexed 0 games while exiting 0.
+- **Season = END year** everywhere — CLI args, `SEASONS`, logs, commit labels and
+  EVERY store dir, per-game and season-level (1996-97 ⇒ `1997`; `2026` = 2025-26;
+  owner convention 2026-09-30). The season-level half was re-keyed from START that
+  day, one commit per season. The only START year left is stats.nba.com's `Season`
+  param: stage 01 asks the API for `season - 1`, and sdv-py's `capture_season` /
+  refill file under and map back from the END-year dir (`STORE_YEAR_OFFSET`).
 - **TLS/JA3**: `stats.nba.com` blocks plain `requests` with a *silent
   timeout*, not an error — a "hang" is usually this. All traffic goes through
   `curl_cffi` `impersonate="chrome"` (`sportsdataverse.scrape.stats.session_transport`).

@@ -50,11 +50,9 @@ while getopts m:s:k:h flag; do
 done
 
 # Season = END year everywhere (1996-97 => 1997; 2026 => 2025-26) -- the
-# ecosystem convention. October rolls forward, so the current season is not the
-# calendar year for three months of it. The one START-keyed remnant is the
-# season-level half of the store (leaguegamelog/2025/ holds 2025-26); stage 01,
-# game_ids_for_season() and stage 20 translate at that boundary, so SEASONS
-# itself is always END.
+# ecosystem convention, and the key of every store dir (season-level dirs were
+# re-keyed from START on 2026-09-30). October rolls forward, so the current
+# season is not the calendar year for three months of it.
 current_season() {
   local m y
   m=$(date -u +%m); y=$(date -u +%Y)

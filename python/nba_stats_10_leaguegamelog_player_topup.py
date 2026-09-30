@@ -19,7 +19,7 @@ variant lands beside them as ``{season_type}_p.json``.
 Resumable: an existing capture is skipped without a request, so a killed run can
 be re-run. Writes are atomic (tmp + rename) via ``season_capture.write_payload``.
 
-    python scripts/nba_stats_10_leaguegamelog_player_topup.py            # 1996:2026
+    python scripts/nba_stats_10_leaguegamelog_player_topup.py            # 1997:2026 (END years)
     python scripts/nba_stats_10_leaguegamelog_player_topup.py 2020:2026  # a sub-range
 
 Proxies are REQUIRED (stats.nba.com hangs on datacenter IPs and is slow to
@@ -51,7 +51,7 @@ def main(argv: list[str]) -> int:
     from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies
     from sportsdataverse.scrape.stats.session_transport import SessionTransport
 
-    spec = argv[0] if argv else "1996:2026"
+    spec = argv[0] if argv else "1997:2026"  # END years
     lo, _, hi = spec.partition(":")
     seasons = range(int(lo), int(hi or lo) + 1)
     store = REPO / "nba_stats" / "json"
@@ -79,12 +79,9 @@ def main(argv: list[str]) -> int:
                 continue
             try:
                 payload = nba_stats_leaguegamelog(
-                    # The store's SEASON-LEVEL half is keyed by START year (dir
-                    # 2023 holds 2023-24) -- unlike the per-game half, which is
-                    # keyed by END year. Match the sibling team capture that
-                    # already lives in this directory, or the two are a season
-                    # apart and every downstream join silently finds nothing.
-                    season=year_to_season(season),
+                    # `season` is the END year and the store dir (both halves key
+                    # END since the 2026-09-30 re-key); the API wants START.
+                    season=year_to_season(season - 1),
                     season_type_all_star=stype,
                     player_or_team_abbreviation="P",
                     league_id=LEAGUE_ID,

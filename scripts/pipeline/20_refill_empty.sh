@@ -23,21 +23,17 @@ SEASONS="${SEASONS:-}"
 
 : "${SEASONS:?[$STAGE] SEASONS is required}"
 
-# SEASONS are END years (2026 = 2025-26). The refill walks the SEASON-LEVEL
-# store, whose dirs are still keyed by the START year, so shift the spec by one.
-case "$SEASONS" in
-  *:*) STORE_SEASONS="$(( ${SEASONS%%:*} - 1 )):$(( ${SEASONS##*:} - 1 ))" ;;
-  *)   STORE_SEASONS="$(( SEASONS - 1 ))" ;;
-esac
+# SEASONS are END years (2026 = 2025-26) = the store dir years; the refill
+# (sdv-py) maps each dir back to the API year itself (NBA: dir - 1).
 
 # Resume is path.exists() -- presence, not content -- so a payload persisted
 # empty blocks its own refetch forever. The write guard refuses empty payloads
 # now, but files already on disk must be repaired. Deletions are tracked in git,
 # so `git checkout -- nba_stats/` undoes a bad run.
-echo "[$STAGE] empty-payload census + refill for END $SEASONS (store dirs $STORE_SEASONS)"
-"$PY" python/nba_stats_20_refill_empty.py --check "$STORE_SEASONS" || true
+echo "[$STAGE] empty-payload census + refill for $SEASONS"
+"$PY" python/nba_stats_20_refill_empty.py --check "$SEASONS" || true
 if [ "${REFILL_APPLY:-1}" = "1" ]; then
-  "$PY" python/nba_stats_20_refill_empty.py "$STORE_SEASONS"
+  "$PY" python/nba_stats_20_refill_empty.py "$SEASONS"
 else
   echo "[$STAGE] REFILL_APPLY=0 -- census only, nothing refetched"
 fi

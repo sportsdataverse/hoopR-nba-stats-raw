@@ -132,11 +132,12 @@ def main(argv: list[str]) -> int:
     _log(f"season-level refresh: {'on' if refresh else 'off (resume on presence)'}")
 
     for season in seasons:
-        # `season` is the END year (2026 = 2025-26), the pipeline-wide convention.
-        # The season-level store dirs, stats.nba.com's Season param and the
-        # season-level floors are still keyed by the START year, so translate here,
-        # once. Passing the END year straight through fetched NEXT season: the
-        # 2026-09-30 daily wrote an empty 2026-27 index and indexed 0 games.
+        # `season` is the END year (2026 = 2025-26), like every store dir. stats.nba.com's
+        # Season param and the season-level floors take the START year, so the API
+        # is asked for `start`; sdv-py's capture_season files the payload under
+        # start + STORE_YEAR_OFFSET (= `season`, the END year) itself. Passing the END
+        # year to the API fetched NEXT season: the 2026-09-30 daily wrote an empty
+        # 2026-27 index and indexed 0 games while exiting 0.
         start = season - 1
         skip_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, start)}
         if only is not None:

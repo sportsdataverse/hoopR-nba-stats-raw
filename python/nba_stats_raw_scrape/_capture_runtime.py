@@ -395,21 +395,21 @@ def game_ids_for_season(store: str, season: int) -> set[str]:
     """The season's game universe, read from the ``leaguegamelog`` payloads
     stage 01 persisted.
 
-    ``season`` is the END year (2026 = 2025-26). ``leaguegamelog`` is a
-    season-level endpoint, still filed under the START year, so its dir is
-    ``season - 1``; the game ids it yields key by END year (``season_of``).
+    ``season`` is the END year (2026 = 2025-26), which is also the directory:
+    both halves of the store key the END year (season-level dirs re-keyed from
+    START on 2026-09-30), so ``leaguegamelog/2026/`` indexes the games that
+    ``playbyplayv3/2026/`` holds.
 
     Reading from disk rather than re-fetching is what makes 02 and 03
     independently runnable: the index is already paid for.
     """
     from nba_stats_raw_scrape.season_capture import game_ids_from_gamelog, payload_path
 
-    start = season - 1
     gids: set[str] = set()
     for stype in SEASON_TYPES:
-        flat = payload_path(store, "leaguegamelog", start, None)
+        flat = payload_path(store, "leaguegamelog", season, None)
         variant = stype.lower().replace(" ", "-")
-        for candidate in (payload_path(store, "leaguegamelog", start, variant), flat):
+        for candidate in (payload_path(store, "leaguegamelog", season, variant), flat):
             if candidate.exists():
                 try:
                     gids.update(
