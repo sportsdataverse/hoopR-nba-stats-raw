@@ -121,8 +121,14 @@ wrong.
 
 ## Conventions & gotchas
 
-- **Season = END year** on disk and in CLI args (1995-96 ⇒ `1996`;
-  `2026` = 2025-26). Disk dirs and commit labels use it verbatim.
+- **Season = END year** in CLI args, `SEASONS`, logs, commit labels and the
+  per-game dirs (1996-97 ⇒ `1997`; `2026` = 2025-26) — the ecosystem convention
+  (owner, 2026-09-30). **One START-keyed remnant:** the season-level half of the
+  store (`leaguegamelog/2025/` holds 2025-26), pending its re-key. Only three
+  seams translate END → START for it: stage 01's `capture_season` call,
+  `game_ids_for_season()`, and stage 20's refill spec. Passing an END year
+  straight into a season-level path fetches NEXT season: the 2026-09-30 daily did
+  exactly that and indexed 0 games while exiting 0.
 - **TLS/JA3**: `stats.nba.com` blocks plain `requests` with a *silent
   timeout*, not an error — a "hang" is usually this. All traffic goes through
   `curl_cffi` `impersonate="chrome"` (`sportsdataverse.scrape.stats.session_transport`).

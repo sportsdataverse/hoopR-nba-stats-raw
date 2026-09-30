@@ -132,14 +132,20 @@ def main(argv: list[str]) -> int:
     _log(f"season-level refresh: {'on' if refresh else 'off (resume on presence)'}")
 
     for season in seasons:
-        skip_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, season)}
+        # `season` is the END year (2026 = 2025-26), the pipeline-wide convention.
+        # The season-level store dirs, stats.nba.com's Season param and the
+        # season-level floors are still keyed by the START year, so translate here,
+        # once. Passing the END year straight through fetched NEXT season: the
+        # 2026-09-30 daily wrote an empty 2026-27 index and indexed 0 games.
+        start = season - 1
+        skip_eps = {e for e in ENDPOINT_MIN_SEASON if _skip_endpoint(e, start)}
         if only is not None:
             # The allowlist NARROWS; it never un-parks. An endpoint below its
             # floor stays skipped even when named, so a typo'd backfill cannot
             # quietly resume hammering a parked endpoint.
             skip_eps |= set(season_endpoints) - only
         w, s, f = capture_season(
-            season,
+            start,
             store,
             _season_fetch,
             stats,
