@@ -399,8 +399,8 @@ def summarize_health(health) -> None:
 
 
 def game_ids_for_season(store: str, season: int) -> set[str]:
-    """The season's game universe, read from the ``leaguegamelog`` payloads
-    stage 01 persisted.
+    """The season's game universe: the ``leaguegamelog`` payloads stage 01
+    persisted, plus the play-in and Cup final from ``scheduleleaguev2``.
 
     ``season`` is the END year (2026 = 2025-26), which is also the directory:
     both halves of the store key the END year (season-level dirs re-keyed from
@@ -425,6 +425,23 @@ def game_ids_for_season(store: str, season: int) -> set[str]:
                 except (OSError, json.JSONDecodeError) as exc:
                     _log(f"season {season} {stype}: game-index read failed: {exc}")
                 break
+    # leaguegamelog omits the play-in (type 5) and the NBA Cup final (type 6);
+    # the -data per-game datasets include both (owner, 2026-09-30), so they are
+    # indexed from the schedule. Preseason / All-Star / international stay out.
+    sched = payload_path(store, "scheduleleaguev2", season, None)
+    if sched.exists():
+        try:
+            days = (json.loads(sched.read_text(encoding="utf-8")).get("leagueSchedule") or {}).get(
+                "gameDates"
+            ) or []
+        except (OSError, json.JSONDecodeError) as exc:
+            _log(f"season {season}: schedule read failed: {exc}")
+            days = []
+        for day in days:
+            for game in day.get("games") or []:
+                gid = str(game.get("gameId") or "").zfill(10)
+                if gid[2:3] in ("5", "6"):
+                    gids.add(gid)
     return gids
 
 

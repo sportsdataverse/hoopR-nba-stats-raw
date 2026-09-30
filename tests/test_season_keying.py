@@ -45,3 +45,18 @@ def test_committed_season_level_dirs_are_end_year(season: int) -> None:
     idx = rs["headers"].index("SEASON_ID")
     starts = {int(str(row[idx])[1:]) for row in rs["rowSet"]}
     assert starts == {season - 1}, f"dir {season} holds START {sorted(starts)}: not END-keyed"
+
+
+def test_game_index_adds_play_in_and_cup_final_from_the_schedule(tmp_path) -> None:
+    """leaguegamelog omits the play-in (5) and Cup final (6); the schedule adds only those."""
+    p = tmp_path / "leaguegamelog" / "2026" / "regular-season.json"
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps(_gamelog("0022500001")), encoding="utf-8")
+    ids = ["0012500001", "0022500001", "0032500001", "0052500101", "0062500001", "0092500001"]
+    sched = tmp_path / "scheduleleaguev2" / "2026.json"
+    sched.parent.mkdir(parents=True)
+    sched.write_text(
+        json.dumps({"leagueSchedule": {"gameDates": [{"games": [{"gameId": g} for g in ids]}]}}),
+        encoding="utf-8",
+    )
+    assert rt.game_ids_for_season(str(tmp_path), 2026) == {"0022500001", "0052500101", "0062500001"}
