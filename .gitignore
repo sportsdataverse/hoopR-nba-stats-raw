@@ -76,6 +76,8 @@ __pycache__/
 .venv/
 **/.venv/
 
-# NOTE: .bundles/ is NOT ignored. The 31 nba_stats_json_YYYY.tar.gz season
-# bundles are tracked deliberately -- they are the clone-free raw-store backend
-# that lets consumers fetch a season without cloning ~490k files.
+# Season bundles (nba_stats_json_{END}.tar.gz) are RELEASE-only since
+# 2026-09-30: the clone-free raw-store backend is the `nba-stats-raw-json`
+# release (scripts that hydrate a store download from it). Git tracked them
+# until the END re-key pushed 7 past GitHub's 100 MiB per-file limit.
+.bundles/
