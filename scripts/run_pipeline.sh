@@ -21,6 +21,23 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO" || exit 1
 
+# Proxy credentials live in ~/.Renviron, which only R loads -- cron and plain
+# shells do not. Lift them here at call time so every stage (each runs as its
+# own `bash`) inherits them: 00_preflight sources the file for itself only, and
+# daily mode does not run 00 at all, so a cron run reached stage 10 proxyless.
+# Same block and same failure as the WNBA twin (dead daily 2026-08-18..09-01).
+# Values are never echoed.
+for f in "${HOME}/.Renviron" "${HOME}/Documents/.Renviron"; do
+  [ -f "${f}" ] || continue
+  for v in PROXY_ENDPOINT PROXY_KEY PROXY_PKG; do
+    if [ -z "${!v:-}" ]; then
+      val="$(sed -nE "s/^[[:space:]]*${v}[[:space:]]*=[[:space:]]*//p" "${f}" \
+             | head -1 | tr -d "\"'" | tr -d '\r')"
+      [ -n "${val}" ] && export "${v}=${val}"
+    fi
+  done
+done
+
 MODE="daily"; SEASONS=""; ONLY=""
 while getopts m:s:k:h flag; do
   case "$flag" in
