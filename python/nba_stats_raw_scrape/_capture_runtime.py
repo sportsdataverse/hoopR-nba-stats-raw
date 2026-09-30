@@ -160,18 +160,18 @@ ENDPOINT_MIN_SEASON = {
     # PARKED — newly VISIBLE (not newly existing) endpoints. Re-pinning sdv-py to
     # current main to reach the hustle wrappers widened discover() from
     # 48 season / 13 game to 58 / 17, i.e. 14 endpoints that no previous sweep
-    # could see. Of those 14: TWO are floored and captured above
-    # (leaguehustlestatsplayer, leaguehustlestatsteam) and the other TWELVE are
-    # parked -- hustlestatsboxscore in its own block above, and the ELEVEN keys
-    # below. Parking is what keeps a lockfile bump from silently becoming a
+    # could see. Of those 14: THREE are floored and captured
+    # (leaguehustlestatsplayer, leaguehustlestatsteam above; boxscoresummaryv3
+    # below) and the other ELEVEN are parked -- hustlestatsboxscore in its own
+    # block above, and the TEN keys below. Parking is what keeps a lockfile bump from silently becoming a
     # 12-endpoint scope expansion on the next scheduled sweep.
     #
-    # FIVE of the eleven are already ruled OUT by
+    # FOUR of the ten are already ruled OUT by
     # sdv-internal-refs/nba/ENDPOINT_DECISIONS.md: the whole boxscore*v2 family,
     # which is both boxscorehustlev2 (the nested v3-style envelope of the data
     # hustlestatsboxscore serves in the plain resultSets shape) AND
-    # boxscoretraditionalv2; plus boxscoresummaryv3, scoreboardv2 and
-    # homepageleaders. The remaining SIX are simply unprobed, and this repo's
+    # boxscoretraditionalv2; plus scoreboardv2 and homepageleaders. The
+    # remaining SIX are simply unprobed, and this repo's
     # rule is that a floor is MEASURED; each stays parked behind its own
     # override until someone probes it.
     #
@@ -180,7 +180,14 @@ ENDPOINT_MIN_SEASON = {
     # cheap-to-make, hard-to-see kind of error: prose next to a map that nothing
     # cross-checks.
     "boxscorehustlev2": _parked("boxscorehustlev2"),
-    "boxscoresummaryv3": _parked("boxscoresummaryv3"),
+    # UN-PARKED 2026-09-30 (owner: resolve the coverage gaps). boxscoresummaryv2
+    # returns blank Officials/InactivePlayers shells for most games since
+    # mid-2024-25 (2025-26 regular season 0.2% covered); v3 carries both for the
+    # same games (probed through the proxy pool: 0022501230, 0042500405). Floor
+    # 2024 = 2024-25, where v2 started going blank. Needs sdv-py >= the
+    # gameid -> game_id rename: before it, `game_id=` was swallowed by **kwargs
+    # and every call fetched the wrapper's DEFAULT game.
+    "boxscoresummaryv3": 2024,
     "boxscoretraditionalv2": _parked("boxscoretraditionalv2"),
     "homepageleaders": _parked("homepageleaders"),
     "homepagev2": _parked("homepagev2"),

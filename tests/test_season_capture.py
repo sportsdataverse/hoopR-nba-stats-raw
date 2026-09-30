@@ -339,12 +339,18 @@ def test_real_modules_discover_expected_shapes() -> None:
     # current main on 2026-09-02 (to reach the hustle wrappers) moved NBA 13 -> 17
     # and WNBA 14 -> 21. When this fails after a re-lock, the right response is to
     # look at what appeared and decide -- floor it, or park it in
-    # ENDPOINT_MIN_SEASON -- and only then update the number here.
-    for mod, pre, n_game in ((W, "wnba_stats", 21), (N, "nba_stats", 17)):
+    # ENDPOINT_MIN_SEASON -- and only then update the number here. 2026-09-30:
+    # +2 each (NBA 17 -> 19, WNBA 21 -> 23) when sdv-py renamed boxscoresummaryv3 /
+    # boxscorehustlev2's `gameid` to `game_id`; before that discover() filed them
+    # as SEASON endpoints. boxscoresummaryv3 in `game` is also the guard that the
+    # pin has the rename -- without it stage 02's `game_id=` fetches one default
+    # game for every id.
+    for mod, pre, n_game in ((W, "wnba_stats", 23), (N, "nba_stats", 19)):
         game, season = discover(mod, pre)
         assert len(game) == n_game
         assert len(season) > 30
         assert "playbyplayv3" in game and "boxscoresummaryv2" in game
+        assert "boxscoresummaryv3" in game and "boxscorehustlev2" in game
 
 
 @pytest.mark.parametrize("league", ["wnba", "nba"])

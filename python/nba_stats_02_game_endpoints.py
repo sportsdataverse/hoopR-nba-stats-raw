@@ -83,7 +83,10 @@ def main(argv: list[str]) -> int:
         """Endpoints in scope for this game's season -- an endpoint below its
         tracking-era floor (gamerotation 500s pre-2016) is out of scope, not
         missing."""
-        yr = season_of(gid)
+        # Floors are START years (the season-level caller passes season - 1);
+        # season_of is the END-year store dir. Passing END let one extra empty
+        # season through: 1,414 blank boxscorematchupsv3 captures for 2016-17.
+        yr = season_of(gid) - 1
         return [e for e in game_endpoints if not _skip_endpoint(e, yr)]
 
     def _one(gid: str) -> tuple[int, int]:
