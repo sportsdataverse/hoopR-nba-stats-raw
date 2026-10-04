@@ -53,7 +53,13 @@ def test_regulation_game_reports_at_least_four_periods() -> None:
     counts = []
     for f in files:
         payload = json.loads(f.read_text(encoding="utf-8"))
+        # A game on the schedule but not yet played is captured as a valid payload with
+        # no actions (2027/0062600001, the NBA Cup final, since 2026-10-01): no periods.
+        if not (payload.get("game") or {}).get("actions"):
+            continue
         counts.append(periods_in_game(payload))
+    if not counts:
+        pytest.skip("no played game among the sampled payloads")
 
     assert all(c >= 4 for c in counts), f"period counts {counts} from {[f.name for f in files]}"
 
