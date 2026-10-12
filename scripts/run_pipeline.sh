@@ -55,7 +55,7 @@ done
 # season is not the calendar year for three months of it.
 current_season() {
   local m y
-  m=$(date -u +%m); y=$(date -u +%Y)
+  m=${PIPELINE_MONTH:-$(date -u +%m)}; y=$(date -u +%Y)
   if [ "$((10#$m))" -ge 10 ]; then echo "$((y + 1))"; else echo "$y"; fi
 }
 
@@ -68,6 +68,15 @@ case "$MODE" in
     # the WNBA twin's current-season leaguegamelog (the game index stages 11/12
     # read) for 24 days in 2026-09 while every run exited 0. Backfill keeps resume.
     export SEASON_REFRESH="${SEASON_REFRESH:-1}"
+    # The May draft combine is filed under NEXT season's key (2027 = the 2026
+    # combine, the draft class's first season), which the current-season window
+    # never asks for until October rolls it forward. May-Jul, stage 10 also
+    # fetches the five draftcombine* endpoints for that key (5 calls a day).
+    # PIPELINE_MONTH overrides the month for tests.
+    m=$((10#${PIPELINE_MONTH:-$(date -u +%m)}))
+    if [ "$m" -ge 5 ] && [ "$m" -le 7 ]; then
+      export COMBINE_LOOKAHEAD_SEASON="${COMBINE_LOOKAHEAD_SEASON:-$(( $(current_season) + 1 ))}"
+    fi
     ;;
   backfill)
     SEASONS="${SEASONS:-1997:$(current_season)}"  # 1997 = 1996-97, the first stats season
@@ -93,6 +102,7 @@ NON_FATAL="30"
 
 {
   echo "[run] mode=$MODE seasons=$SEASONS stages=$STAGES"
+  [ -n "${COMBINE_LOOKAHEAD_SEASON:-}" ] && echo "[run] combine look-ahead: $COMBINE_LOOKAHEAD_SEASON"
   echo "[run] log=$LOG"
   if [ "${DRY_RUN:-0}" = "1" ]; then
     echo "[run] DRY_RUN=1 -- plan only:"

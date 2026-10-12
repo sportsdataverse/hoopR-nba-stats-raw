@@ -32,3 +32,15 @@ export SDV_PY_NBA_STATS_TIMEOUT="${SDV_PY_NBA_STATS_TIMEOUT:-90}"
 echo "[$STAGE] $SEASONS (workers=$SCRAPE_WORKERS timeout=${SDV_PY_NBA_STATS_TIMEOUT}s)"
 # Resume is presence-on-disk, so Ctrl-C + rerun is always safe.
 PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_01_season_endpoints.py "$SEASONS"
+rc=$?
+
+# Draft-combine look-ahead (set by run_pipeline.sh daily mode, May-Jul): the May
+# combine lives under next season's key. Advisory: a miss here never fails the
+# day's capture, the next daily retries it.
+if [ -n "${COMBINE_LOOKAHEAD_SEASON:-}" ]; then
+  echo "[$STAGE] combine look-ahead $COMBINE_LOOKAHEAD_SEASON"
+  PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_01_season_endpoints.py "$COMBINE_LOOKAHEAD_SEASON" \
+    --endpoints=draftcombinestats,draftcombinedrillresults,draftcombineplayeranthro,draftcombinespotshooting,draftcombinenonstationaryshooting \
+    || echo "[$STAGE] combine look-ahead failed (rc=$?) -- advisory, continuing"
+fi
+exit "$rc"
