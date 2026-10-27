@@ -98,3 +98,19 @@ def test_a_failed_fetch_is_not_recorded_as_probed(tmp_path: Path) -> None:
     with pytest.raises(AssetFetchError):
         inj.capture_date(DAY, tmp_path, fetch=boom, delay=0, now=dt.datetime(2026, 1, 15, 0, 30))
     assert not (tmp_path / "injury_report").exists()
+
+
+def test_a_failed_injury_stage_does_not_stop_the_daily_chain() -> None:
+    """Stage 15 is advisory: its failure must not cost the day's stats capture."""
+    import os
+    import shutil
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    env = {**os.environ, "NBA_VENV_PYTHON": shutil.which("false") or "/bin/false"}
+    out = subprocess.run(
+        ["bash", "scripts/run_pipeline.sh", "-m", "daily", "-k", "15"],
+        cwd=repo, env=env, capture_output=True, text=True,
+    )  # fmt: skip
+    assert "15_injury_report.sh failed" in out.stdout and "advisory, continuing" in out.stdout
+    assert out.returncode == 0

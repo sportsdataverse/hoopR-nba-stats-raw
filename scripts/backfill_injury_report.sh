@@ -4,7 +4,7 @@
 #   bash scripts/backfill_injury_report.sh 2018-12-17:2026-06-30
 #   tail -f logs/injury_report_backfill.log            # watch (another terminal)
 #
-# ~68k slot probes in all (3/day to 2021-10-14, hourly to 2025-12-21, every 15 min
+# ~58k slot probes in all (3/day to 2021-10-14, hourly to 2025-12-21, every 15 min
 # after). Resumable: every probed slot (hit or miss) is recorded per date, so Ctrl-C
 # and re-run picks up where it stopped. Pace with INJ_RATE_DELAY (seconds between
 # requests, default 0.5). Commit the store afterwards with stage 40.

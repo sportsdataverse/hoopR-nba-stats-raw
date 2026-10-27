@@ -98,7 +98,9 @@ LOG="logs/pipeline_${MODE}_$(date -u +%Y%m%d_%H%M%S).log"
 
 # Stage 30 is advisory: the schedule master is a claim ABOUT the payloads, so a
 # failure there must not stop stage 40 from committing the payloads themselves.
-NON_FATAL="30"
+# Stage 15 is advisory too: the injury report is a separate source (league CDN,
+# PDF parser), and its failure must not cost the day's stats.nba.com capture.
+NON_FATAL="15,30"
 
 {
   echo "[run] mode=$MODE seasons=$SEASONS stages=$STAGES"

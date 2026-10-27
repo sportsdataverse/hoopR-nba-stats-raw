@@ -21,9 +21,10 @@ schedule-master rebuild, and neither having the other's.
 | 40 | `40_commit.sh` | Commit + push, one commit per season | yes | no |
 | 50 | `50_publish_bundles.sh` | Refreshes the per-season tarballs on `nba-stats-raw-json` | yes | no |
 
-Stage 30 is **advisory**: the master is a claim *about* the payloads, so a
-failure there does not stop stage 40 from committing the payloads themselves.
-Every other stage stops the chain on failure.
+Stages 15 and 30 are **advisory**. The master (30) is a claim *about* the
+payloads, so a failure there does not stop stage 40 from committing the payloads
+themselves; the injury report (15) is a separate source whose failure must not
+cost the day's stats.nba.com capture. Every other stage stops the chain on failure.
 
 The capture stages 10 → 11 → 12 are ordered by a DATA dependency through the
 store, not by shared memory: 10 persists the game index, 11 and 12 read it
@@ -40,7 +41,7 @@ convention as the `-data` siblings' `nba_stats_NN_*_creation.py`.
 | 01 | `nba_stats_01_season_endpoints.py` | season-level payloads | — | `10_season_endpoints.sh` |
 | 02 | `nba_stats_02_game_endpoints.py` | one payload per game per endpoint | `leaguegamelog` on disk | `11_game_endpoints.sh` |
 | 03 | `nba_stats_03_period_boxscores.py` | per-period boxscores | `leaguegamelog` + each game's `playbyplayv3` on disk | `12_period_boxscores.sh` |
-| 04 | `nba_stats_04_injury_report.py` | official injury report, per report date (`--check` sizes it; dates `LO:HI` as `YYYY-MM-DD`) | the date's own JSON (probed slots) | `15_injury_report.sh`; history: `scripts/backfill_injury_report.sh` (manual, ~68k probes) |
+| 04 | `nba_stats_04_injury_report.py` | official injury report, per report date (`--check` sizes it; dates `LO:HI` as `YYYY-MM-DD`) | the date's own JSON (probed slots) | `15_injury_report.sh`; history: `scripts/backfill_injury_report.sh` (manual, ~58k probes) |
 | 10 | `nba_stats_10_leaguegamelog_player_topup.py` | PLAYER variant of `leaguegamelog` | — | **no mode** — run manually |
 | 20 | `nba_stats_20_refill_empty.py` | repair: empty `{}` payloads | the store | `20_refill_empty.sh` |
 | 99 | `nba_stats_99_schedule_master_creation.py` | schedule master + coverage index | the whole store | `30_schedule_master.sh` |

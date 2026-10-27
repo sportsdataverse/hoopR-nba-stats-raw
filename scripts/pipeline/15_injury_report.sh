@@ -9,7 +9,7 @@
 # no proxy, no curl_cffi. Daily mode probes yesterday..today (ET); a slot already
 # probed is never asked again, so re-runs only pick up newly published slots.
 # The history backfill is scripts/backfill_injury_report.sh, run by hand -- it is
-# deliberately NOT part of `run_pipeline.sh -m backfill` (~68k requests).
+# deliberately NOT part of `run_pipeline.sh -m backfill` (~58k requests).
 #
 # Contract shared by every stage:
 #   * resolves its interpreter through scripts/_venv.sh -- never `uv run`
