@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "stats.nba.com raw payload scrapers for the hoopR-nba-stats-raw archive."
 requires-python = ">=3.11"
 dependencies = [
-    "sportsdataverse>=0.0.73",
+    # [pdf]: pdfplumber for the official injury report (python/nba_stats_15_injury_report.py)
+    "sportsdataverse[pdf]>=0.0.73",
     # stats.nba.com TLS/JA3-fingerprint-blocks plain `requests` -- it produces a
     # SILENT TIMEOUT, not an error, so this is not interchangeable with requests.
     # The transport impersonates Chrome.

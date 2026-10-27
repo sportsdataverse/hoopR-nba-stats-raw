@@ -62,7 +62,7 @@ current_season() {
 case "$MODE" in
   daily)
     SEASONS="${SEASONS:-$(current_season)}"
-    STAGES="${ONLY:-10,11,12,30,40}"
+    STAGES="${ONLY:-10,11,12,15,30,40}"
     export SCRAPE_WORKERS="${SCRAPE_WORKERS:-4}"
     # Re-fetch season-level payloads that already exist. Resume-on-presence froze
     # the WNBA twin's current-season leaguegamelog (the game index stages 11/12

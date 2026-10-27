@@ -15,6 +15,7 @@ schedule-master rebuild, and neither having the other's.
 | 10 | `10_season_endpoints.sh` | Season-level payloads. Persists `leaguegamelog`, the game index 11 and 12 read back | yes | **yes** |
 | 11 | `11_game_endpoints.sh` | Per-game whole-game payloads | yes | **yes** |
 | 12 | `12_period_boxscores.sh` | Per-period boxscores, sized from each game's persisted play-by-play | yes | **yes** |
+| 15 | `15_injury_report.sh` | Official NBA injury report (league PDFs on `ak-static.cms.nba.com`, not stats.nba.com — no proxy), yesterday..today ET; one JSON per date under `injury_report/{END}/`, only changed slots kept | yes | **yes** |
 | 20 | `20_refill_empty.sh` | Deletes payloads persisted as empty and refetches them | yes | **yes** |
 | 30 | `30_schedule_master.sh` | Rebuilds the schedule master + coverage index | yes | no |
 | 40 | `40_commit.sh` | Commit + push, one commit per season | yes | no |
@@ -39,6 +40,7 @@ convention as the `-data` siblings' `nba_stats_NN_*_creation.py`.
 | 01 | `nba_stats_01_season_endpoints.py` | season-level payloads | — | `10_season_endpoints.sh` |
 | 02 | `nba_stats_02_game_endpoints.py` | one payload per game per endpoint | `leaguegamelog` on disk | `11_game_endpoints.sh` |
 | 03 | `nba_stats_03_period_boxscores.py` | per-period boxscores | `leaguegamelog` + each game's `playbyplayv3` on disk | `12_period_boxscores.sh` |
+| 04 | `nba_stats_04_injury_report.py` | official injury report, per report date (`--check` sizes it; dates `LO:HI` as `YYYY-MM-DD`) | the date's own JSON (probed slots) | `15_injury_report.sh`; history: `scripts/backfill_injury_report.sh` (manual, ~68k probes) |
 | 10 | `nba_stats_10_leaguegamelog_player_topup.py` | PLAYER variant of `leaguegamelog` | — | **no mode** — run manually |
 | 20 | `nba_stats_20_refill_empty.py` | repair: empty `{}` payloads | the store | `20_refill_empty.sh` |
 | 99 | `nba_stats_99_schedule_master_creation.py` | schedule master + coverage index | the whole store | `30_schedule_master.sh` |
@@ -65,7 +67,7 @@ nothing:
 
 | Mode | Seasons default | Stages | Workers |
 |---|---|---|---|
-| `daily` | current END-year season | `10,11,12,30,40` | 4 |
+| `daily` | current END-year season | `10,11,12,15,30,40` | 4 |
 | `backfill` | `1996:current` | `00,10,11,12,20,30,40,50` | 6 |
 | `repair` | current season | `20,30,40` | inherited |
 
