@@ -44,7 +44,11 @@ def _now_et() -> dt.datetime:
 
 
 def end_year(day: dt.date) -> int:
-    return day.year + 1 if day.month >= 8 else day.year
+    """END-year season key, rolling forward in October like run_pipeline.sh's
+    current_season(). The 2020 bubble ran the 2019-20 Finals to 2020-10-11."""
+    if day.month < 10 or (day.year == 2020 and day <= dt.date(2020, 10, 11)):
+        return day.year
+    return day.year + 1
 
 
 def _dates(spec: str | None) -> list[dt.date]:
@@ -70,6 +74,15 @@ def _rows(df) -> list[dict]:
     ]
 
 
+def _content(rows: list[dict] | None) -> list[dict] | None:
+    """Rows minus the per-slot timestamp, so a re-published report compares equal."""
+    return (
+        None
+        if rows is None
+        else [{k: v for k, v in r.items() if k != "report_datetime"} for r in rows]
+    )
+
+
 def capture_date(day: dt.date, store: Path, *, fetch, delay: float, now: dt.datetime) -> dict:
     """Probe every not-yet-asked, already-published slot of ``day``; returns counts."""
     from sportsdataverse.errors import NoDataError
@@ -86,27 +99,29 @@ def capture_date(day: dt.date, store: Path, *, fetch, delay: float, now: dt.date
     )
     asked = set(doc["probed"])
     counts = {"asked": 0, "kept": 0, "missing": 0}
-    for slot in nba_injury_report_slots(day):
-        key = slot.isoformat(timespec="minutes")
-        if key in asked or slot > now:
-            continue
-        try:
-            rows = _rows(fetch(slot))
-        except NoDataError:
-            rows = None
-            counts["missing"] += 1
-        counts["asked"] += 1
-        doc["probed"].append(key)
-        last = doc["slots"][-1]["rows"] if doc["slots"] else None
-        if rows is not None and rows != last:
-            doc["slots"].append(
-                {"report_time": key, "url": nba_injury_report_url(slot), "rows": rows}
-            )
-            counts["kept"] += 1
-        time.sleep(delay)
-    if counts["asked"]:
-        doc["probed"].sort()
-        _write_atomic(path, doc)
+    try:
+        for slot in nba_injury_report_slots(day):
+            key = slot.isoformat(timespec="minutes")
+            if key in asked or slot > now:
+                continue
+            try:
+                rows = _rows(fetch(slot))
+            except NoDataError:
+                rows = None
+                counts["missing"] += 1
+            counts["asked"] += 1
+            doc["probed"].append(key)
+            last = doc["slots"][-1]["rows"] if doc["slots"] else None
+            if rows is not None and _content(rows) != _content(last):
+                doc["slots"].append(
+                    {"report_time": key, "url": nba_injury_report_url(slot), "rows": rows}
+                )
+                counts["kept"] += 1
+            time.sleep(delay)
+    finally:  # a later fetch error keeps the slots already probed; the failed one is not recorded
+        if counts["asked"]:
+            doc["probed"].sort()
+            _write_atomic(path, doc)
     return counts
 
 

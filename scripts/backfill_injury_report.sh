@@ -18,6 +18,10 @@ LOG="logs/injury_report_backfill.log"
 {
   echo "[backfill] $(date -u +%FT%TZ) range=$RANGE delay=${INJ_RATE_DELAY:-0.5}"
   PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 "$SDV_PY" python/nba_stats_04_injury_report.py "$RANGE"
-  echo "EXIT=$?"
+  rc=$?
+  echo "EXIT=$rc"
+  exit "$rc"
 } >> "$LOG" 2>&1
+rc=$?
 tail -n 3 "$LOG"
+exit "$rc"

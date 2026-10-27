@@ -23,10 +23,10 @@ _SPEC.loader.exec_module(inj)
 DAY = dt.date(2026, 1, 15)  # quarter-hourly era: 96 slots
 
 
-def _frame(status: str) -> pl.DataFrame:
+def _frame(status: str, at: dt.datetime = dt.datetime(2026, 1, 15, 17, 30)) -> pl.DataFrame:
     return pl.DataFrame(
         {
-            "report_datetime": [dt.datetime(2026, 1, 15, 17, 30)],
+            "report_datetime": [at],  # differs per slot, like the real parser
             "game_date": [DAY],
             "team": ["Memphis Grizzlies"],
             "player_name": ["Clarke, Brandon"],
@@ -49,8 +49,10 @@ def _fetcher(published: dict):
 
 def test_keeps_only_changed_slots_and_records_every_probe(tmp_path: Path) -> None:
     t = dt.datetime.combine(DAY, dt.time())
-    published = {t.replace(hour=12): _frame("Questionable"), t.replace(hour=13): _frame("Questionable"),
-                 t.replace(hour=17, minute=30): _frame("Out")}  # fmt: skip
+    slots = (t.replace(hour=12), t.replace(hour=13), t.replace(hour=17, minute=30))
+    published = {
+        s: _frame(st, at=s) for s, st in zip(slots, ("Questionable", "Questionable", "Out"))
+    }
     fetch, calls = _fetcher(published)
     c = inj.capture_date(DAY, tmp_path, fetch=fetch, delay=0, now=t.replace(hour=18))
     doc = json.loads((tmp_path / "injury_report" / "2026" / "2026-01-15.json").read_text())
@@ -81,7 +83,15 @@ def test_future_slots_are_never_asked_and_nothing_is_written_when_idle(tmp_path:
 
 @pytest.mark.parametrize(
     ("day", "season"),
-    [(dt.date(2025, 12, 1), 2026), (dt.date(2026, 4, 1), 2026), (dt.date(2026, 10, 25), 2027)],
+    [
+        (dt.date(2025, 12, 1), 2026),
+        (dt.date(2026, 4, 1), 2026),
+        (dt.date(2026, 9, 15), 2026),  # rolls forward in October, like run_pipeline.sh
+        (dt.date(2026, 10, 25), 2027),
+        (dt.date(2020, 8, 15), 2020),  # bubble restart
+        (dt.date(2020, 10, 11), 2020),  # bubble Finals game 6
+        (dt.date(2020, 12, 22), 2021),
+    ],
 )
 def test_season_key_is_the_end_year(day: dt.date, season: int) -> None:
     assert inj.end_year(day) == season
@@ -114,3 +124,19 @@ def test_a_failed_injury_stage_does_not_stop_the_daily_chain() -> None:
     )  # fmt: skip
     assert "15_injury_report.sh failed" in out.stdout and "advisory, continuing" in out.stdout
     assert out.returncode == 0
+
+
+def test_a_later_fetch_error_keeps_the_slots_already_probed(tmp_path: Path) -> None:
+    from sportsdataverse.errors import AssetFetchError
+
+    t = dt.datetime.combine(DAY, dt.time())
+
+    def flaky(slot: dt.datetime) -> pl.DataFrame:
+        if slot >= t.replace(hour=0, minute=30):
+            raise AssetFetchError("CDN block")
+        raise NoDataError(str(slot))
+
+    with pytest.raises(AssetFetchError):
+        inj.capture_date(DAY, tmp_path, fetch=flaky, delay=0, now=t.replace(hour=1))
+    doc = json.loads((tmp_path / "injury_report" / "2026" / "2026-01-15.json").read_text())
+    assert doc["probed"] == ["2026-01-15T00:00", "2026-01-15T00:15"]  # 00:30 failed: not recorded
