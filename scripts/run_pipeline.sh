@@ -62,7 +62,7 @@ current_season() {
 case "$MODE" in
   daily)
     SEASONS="${SEASONS:-$(current_season)}"
-    STAGES="${ONLY:-10,11,12,30,40}"
+    STAGES="${ONLY:-10,11,12,15,30,40}"
     export SCRAPE_WORKERS="${SCRAPE_WORKERS:-4}"
     # Re-fetch season-level payloads that already exist. Resume-on-presence froze
     # the WNBA twin's current-season leaguegamelog (the game index stages 11/12
@@ -98,7 +98,9 @@ LOG="logs/pipeline_${MODE}_$(date -u +%Y%m%d_%H%M%S).log"
 
 # Stage 30 is advisory: the schedule master is a claim ABOUT the payloads, so a
 # failure there must not stop stage 40 from committing the payloads themselves.
-NON_FATAL="30"
+# Stage 15 is advisory too: the injury report is a separate source (league CDN,
+# PDF parser), and its failure must not cost the day's stats.nba.com capture.
+NON_FATAL="15,30"
 
 {
   echo "[run] mode=$MODE seasons=$SEASONS stages=$STAGES"
