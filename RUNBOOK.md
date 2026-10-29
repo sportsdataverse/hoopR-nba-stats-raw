@@ -15,7 +15,7 @@ schedule-master rebuild, and neither having the other's.
 | 10 | `10_season_endpoints.sh` | Season-level payloads. Persists `leaguegamelog`, the game index 11 and 12 read back | yes | **yes** |
 | 11 | `11_game_endpoints.sh` | Per-game whole-game payloads | yes | **yes** |
 | 12 | `12_period_boxscores.sh` | Per-period boxscores, sized from each game's persisted play-by-play | yes | **yes** |
-| 15 | `15_injury_report.sh` | Official NBA injury report (league PDFs on `ak-static.cms.nba.com`, not stats.nba.com — no proxy), yesterday..today ET; one JSON per date under `injury_report/{END}/`, only changed slots kept | yes | **yes** |
+| 15 | `15_injury_report.sh` | Official NBA injury report (league PDFs on `ak-static.cms.nba.com`, not stats.nba.com; Akamai 403s the droplet IP, so it rotates the proxy pool when `PROXY_*` is set), yesterday..today ET; one JSON per date under `injury_report/{END}/`, only changed slots kept | yes | **yes** |
 | 20 | `20_refill_empty.sh` | Deletes payloads persisted as empty and refetches them | yes | **yes** |
 | 30 | `30_schedule_master.sh` | Rebuilds the schedule master + coverage index | yes | no |
 | 40 | `40_commit.sh` | Commit + push, one commit per season | yes | no |

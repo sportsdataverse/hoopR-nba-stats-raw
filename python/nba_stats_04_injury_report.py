@@ -2,7 +2,9 @@
 """Capture the official NBA injury report into the raw store, one JSON per report date.
 
 Source: ``ak-static.cms.nba.com/referee/injury/Injury-Report_{date}_{slot}.pdf`` (static
-S3 behind Akamai -- not stats.nba.com, so no proxy). The fetch + parse live in sdv-py
+S3 behind Akamai). Akamai 403s a datacenter IP (the droplet) on every slot, so the fetch
+rotates the stats proxy pool when ``PROXY_*`` is set; a residential run without it goes
+direct. The fetch + parse live in sdv-py
 (``sportsdataverse.nba.nba_official_injury``); this stage only decides which slots to
 probe and what to keep.
 
@@ -125,6 +127,10 @@ def capture_date(day: dt.date, store: Path, *, fetch, delay: float, now: dt.date
     return counts
 
 
+def _proxy(url: str | None) -> dict | None:
+    return {"http": url, "https": url} if url else None
+
+
 def _check(days: list[dt.date], store: Path, now: dt.datetime) -> int:
     """Size the work without fetching: slots not yet probed, per the store."""
     from sportsdataverse.nba.nba_official_injury import nba_injury_report_slots
@@ -149,6 +155,9 @@ def _check(days: list[dt.date], store: Path, now: dt.datetime) -> int:
 
 def main(argv: list[str]) -> int:
     from sportsdataverse.nba.nba_official_injury import nba_injury_report
+    from sportsdataverse.scrape.stats.proxy import RoundRobin, load_proxies
+
+    pool = RoundRobin(load_proxies())  # empty pool -> next() is None -> direct
 
     store = Path(resolve_store())
     delay = float(os.environ.get("INJ_RATE_DELAY", "0.5"))
@@ -162,7 +171,7 @@ def main(argv: list[str]) -> int:
         c = capture_date(
             day,
             store,
-            fetch=lambda s: nba_injury_report(report_time=s),
+            fetch=lambda s: nba_injury_report(report_time=s, proxy=_proxy(pool.next())),
             delay=delay,
             now=now,
         )
