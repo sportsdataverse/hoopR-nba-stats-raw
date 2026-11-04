@@ -238,6 +238,29 @@ def _skip_endpoint(endpoint: str, season: int) -> bool:
     return season > ENDPOINT_MAX_SEASON.get(endpoint, 9999)
 
 
+def is_v3_game_shell(path: Path) -> bool:
+    """True when a per-game v3 boxscore capture is a placeholder, not data.
+
+    stats.nba.com answers boxscoreplayertrackv3 / boxscorematchupsv3 for a
+    finished game with a valid envelope whose ``homeTeam`` / ``awayTeam`` are
+    ``teamId: 0``, ``players: []`` until tracking is posted (hours later). A
+    morning capture persisted that shell, and presence-on-disk resume never
+    looked at it again (hoopR-nba-stats-raw#16: 88 of 108 2026-27
+    playertrack files). Any unreadable file also counts, so it is re-fetched.
+    """
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if not isinstance(payload, dict):
+        return False
+    for key, body in payload.items():
+        if key.startswith("boxScore") and isinstance(body, dict):
+            teams = [body.get("homeTeam"), body.get("awayTeam")]
+            return all(isinstance(t, dict) and not t.get("teamId") for t in teams)
+    return False
+
+
 def _log(msg: str) -> None:
     print(f"[{datetime.now(timezone.utc).strftime('%F %T')}Z] {msg}", flush=True)
 

@@ -34,6 +34,7 @@ from nba_stats_raw_scrape._capture_runtime import (  # noqa: E402
     _log,
     _skip_endpoint,
     game_ids_for_season,
+    is_v3_game_shell,
     load_stats_module,
     no_proxy_error,
     open_transport,
@@ -89,12 +90,22 @@ def main(argv: list[str]) -> int:
         yr = season_of(gid) - 1
         return [e for e in game_endpoints if not _skip_endpoint(e, yr)]
 
+    def _have(path) -> bool:
+        # ponytail: a shell is re-fetched on every run until real data lands; if
+        # stats.nba.com never posts tracking for a game, that is one wasted call
+        # per daily run for that game (bounded by the daily season scope).
+        return path is not None and path.exists() and not is_v3_game_shell(path)
+
     def _one(gid: str) -> tuple[int, int]:
         fetched = failed = 0
         for ep in _endpoints_for(gid):
             path = _raw_store_path(ep, gid, root=store)
-            if path is not None and path.exists():
+            if _have(path):
                 continue
+            if path is not None and path.exists():
+                # The read-through store returns a file that exists, so drop
+                # the shell first; a failed fetch leaves a miss, not a shell.
+                path.unlink()
             try:
                 _through_raw_store(
                     ep,
@@ -112,7 +123,7 @@ def main(argv: list[str]) -> int:
 
     def _incomplete(gid: str) -> bool:
         return any(
-            (p := _raw_store_path(ep, gid, root=store)) is not None and not p.exists()
+            (p := _raw_store_path(ep, gid, root=store)) is not None and not _have(p)
             for ep in _endpoints_for(gid)
         )
 
