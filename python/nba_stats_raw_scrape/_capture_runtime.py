@@ -247,6 +247,13 @@ def is_v3_game_shell(path: Path) -> bool:
     morning capture persisted that shell, and presence-on-disk resume never
     looked at it again (hoopR-nba-stats-raw#16: 88 of 108 2026-27
     playertrack files). Any unreadable file also counts, so it is re-fetched.
+
+    ``boxscoresummaryv3`` has the same failure with a different shape: a final
+    game whose ``inactives`` are empty on BOTH teams. The inactive list is posted
+    after the final whistle, so a morning capture missed it for 52 of the first
+    146 games of 2026-27, and nba_stats_game_rosters lost the whole opening week.
+    A real game always lists an inactive player, so this re-fetch never loops on
+    real data.
     """
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -254,6 +261,12 @@ def is_v3_game_shell(path: Path) -> bool:
         return True
     if not isinstance(payload, dict):
         return False
+    summary = payload.get("boxScoreSummary")
+    if isinstance(summary, dict):
+        teams = [summary.get("homeTeam"), summary.get("awayTeam")]
+        return summary.get("gameStatus") == 3 and all(
+            isinstance(t, dict) and not t.get("inactives") for t in teams
+        )
     for key, body in payload.items():
         if key.startswith("boxScore") and isinstance(body, dict):
             teams = [body.get("homeTeam"), body.get("awayTeam")]

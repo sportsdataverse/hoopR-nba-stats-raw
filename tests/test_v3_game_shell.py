@@ -33,3 +33,28 @@ def test_non_boxscore_and_unreadable(tmp_path):
     bad = tmp_path / "torn.json"
     bad.write_text("{", encoding="utf-8")
     assert is_v3_game_shell(bad)
+
+
+def _summary(status, home_inactives, away_inactives):
+    def team(inactives):
+        return {"teamId": 1610612738, "inactives": inactives}
+
+    return {
+        "boxScoreSummary": {
+            "gameStatus": status,
+            "homeTeam": team(home_inactives),
+            "awayTeam": team(away_inactives),
+        }
+    }
+
+
+def test_final_summary_with_no_inactives_is_a_shell(tmp_path):
+    # Shape of boxscoresummaryv3/2027/0022600001.json as captured 2026-10-21.
+    assert is_v3_game_shell(_write(tmp_path, _summary(3, [], [])))
+
+
+def test_summary_with_inactives_or_not_final_is_kept(tmp_path):
+    one = [{"personId": 1}]
+    assert not is_v3_game_shell(_write(tmp_path, _summary(3, one, [])))
+    assert not is_v3_game_shell(_write(tmp_path, _summary(3, [], one)))
+    assert not is_v3_game_shell(_write(tmp_path, _summary(2, [], [])))
