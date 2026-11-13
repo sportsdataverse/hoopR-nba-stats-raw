@@ -18,9 +18,12 @@ variant lands beside them as ``{season_type}_p.json``.
 
 Resumable: an existing capture is skipped without a request, so a killed run can
 be re-run. Writes are atomic (tmp + rename) via ``season_capture.write_payload``.
+``--refresh`` re-fetches captures that exist (the current season changes daily; stage
+10 passes it in daily mode). A refresh that fails or answers no rows keeps the file.
 
     python scripts/nba_stats_10_leaguegamelog_player_topup.py            # 1997:2026 (END years)
     python scripts/nba_stats_10_leaguegamelog_player_topup.py 2020:2026  # a sub-range
+    python scripts/nba_stats_10_leaguegamelog_player_topup.py --refresh 2027
 
 Proxies are REQUIRED (stats.nba.com hangs on datacenter IPs and is slow to
 non-residential ones); export PROXY_ENDPOINT / PROXY_KEY / PROXY_PKG first --
@@ -51,6 +54,8 @@ def main(argv: list[str]) -> int:
     from sportsdataverse.scrape.stats.proxy import ProxyHealth, RoundRobin, load_proxies
     from sportsdataverse.scrape.stats.session_transport import SessionTransport
 
+    refresh = "--refresh" in argv
+    argv = [a for a in argv if a != "--refresh"]
     spec = argv[0] if argv else "1997:2026"  # END years
     lo, _, hi = spec.partition(":")
     seasons = range(int(lo), int(hi or lo) + 1)
@@ -74,7 +79,7 @@ def main(argv: list[str]) -> int:
         for stype in SEASON_TYPES:
             variant = f"{stype.lower().replace(' ', '-')}_p"
             path = payload_path(store, "leaguegamelog", season, variant)
-            if path.exists():
+            if path.exists() and not refresh:
                 skipped += 1
                 continue
             try:

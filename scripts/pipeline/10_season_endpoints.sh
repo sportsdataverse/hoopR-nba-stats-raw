@@ -34,6 +34,14 @@ echo "[$STAGE] $SEASONS (workers=$SCRAPE_WORKERS timeout=${SDV_PY_NBA_STATS_TIME
 PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_01_season_endpoints.py "$SEASONS"
 rc=$?
 
+# Player-mode leaguegamelog ({season_type}_p.json): stage 01 captures only the team
+# variant. One call per season type; the -data repo builds player_game_logs from it.
+# Daily mode (SEASON_REFRESH=1) re-fetches the current season's capture.
+if [ "$rc" -eq 0 ]; then
+  refresh=""; [ "${SEASON_REFRESH:-0}" = 1 ] && refresh="--refresh"
+  PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 "$PY" python/nba_stats_10_leaguegamelog_player_topup.py $refresh "$SEASONS" || rc=$?
+fi
+
 # Draft-combine look-ahead (set by run_pipeline.sh daily mode, May-Jul): the May
 # combine lives under next season's key. Advisory: a miss here never fails the
 # day's capture, the next daily retries it.
