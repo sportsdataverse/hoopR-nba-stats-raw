@@ -68,6 +68,11 @@ case "$MODE" in
     # the WNBA twin's current-season leaguegamelog (the game index stages 11/12
     # read) for 24 days in 2026-09 while every run exited 0. Backfill keeps resume.
     export SEASON_REFRESH="${SEASON_REFRESH:-1}"
+    # gamerotation stays PARKED for backfills (_capture_runtime.ENDPOINT_MIN_SEASON:
+    # slow under a full sweep's concurrency), but the daily pass is the current
+    # season's few new games: un-park it here so their rotations are captured. The
+    # hoopR-nba-stats-data build prefers the rotation for lineups (2026-11-14).
+    export GAMEROTATION_MIN_SEASON="${GAMEROTATION_MIN_SEASON:-2016}"
     # The May draft combine is filed under NEXT season's key (2027 = the 2026
     # combine, the draft class's first season), which the current-season window
     # never asks for until October rolls it forward. May-Jul, stage 10 also
